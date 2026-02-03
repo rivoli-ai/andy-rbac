@@ -1,0 +1,398 @@
+openapi: 3.0.3
+info:
+  title: Andy RBAC API
+  description: |
+    Role-Based Access Control API for Andy applications.
+
+    This API provides:
+    - Permission checking (can subject X do action Y on resource Z?)
+    - Role management (create, update, delete roles)
+    - Subject management (users, service accounts)
+    - Instance-level permissions (sharing resources)
+  version: 1.0.0
+  contact:
+    name: Rivoli AI
+    url: https://rivoli.ai
+
+servers:
+  - url: https://rbac.rivoli.ai
+    description: Production
+  - url: https://rbac-uat.rivoli.ai
+    description: UAT
+  - url: http://localhost:5000
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/check:
+    post:
+      summary: Check permission
+      description: Checks if a subject has a specific permission
+      operationId: checkPermission
+      tags:
+        - Permissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckPermissionRequest'
+      responses:
+        '200':
+          description: Permission check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckPermissionResponse'
+        '401':
+          description: Unauthorized
+
+  /api/check/any:
+    post:
+      summary: Check any permission
+      description: Checks if a subject has any of the specified permissions
+      operationId: checkAnyPermission
+      tags:
+        - Permissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckAnyPermissionRequest'
+      responses:
+        '200':
+          description: Permission check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckPermissionResponse'
+
+  /api/check/permissions/{subjectId}:
+    get:
+      summary: Get permissions
+      description: Gets all permissions for a subject
+      operationId: getPermissions
+      tags:
+        - Permissions
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: applicationCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetPermissionsResponse'
+
+  /api/check/roles/{subjectId}:
+    get:
+      summary: Get roles
+      description: Gets all roles for a subject
+      operationId: getRoles
+      tags:
+        - Permissions
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: applicationCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetRolesResponse'
+
+  /api/roles:
+    get:
+      summary: List roles
+      description: Gets all roles, optionally filtered by application
+      operationId: listRoles
+      tags:
+        - Roles
+      parameters:
+        - name: applicationCode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+    post:
+      summary: Create role
+      description: Creates a new role
+      operationId: createRole
+      tags:
+        - Roles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+
+  /api/roles/{id}:
+    get:
+      summary: Get role
+      description: Gets a role by ID
+      operationId: getRole
+      tags:
+        - Roles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Role details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleDetail'
+        '404':
+          description: Role not found
+    delete:
+      summary: Delete role
+      description: Deletes a role
+      operationId: deleteRole
+      tags:
+        - Roles
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Role deleted
+        '404':
+          description: Role not found
+
+  /api/subjects:
+    post:
+      summary: Provision subject
+      description: Creates or updates a subject
+      operationId: provisionSubject
+      tags:
+        - Subjects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProvisionSubjectRequest'
+      responses:
+        '200':
+          description: Subject provisioned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subject'
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the API
+      operationId: healthCheck
+      tags:
+        - Health
+      security: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: Healthy
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CheckPermissionRequest:
+      type: object
+      required:
+        - subjectId
+        - permission
+      properties:
+        subjectId:
+          type: string
+          description: External ID of the subject
+        permission:
+          type: string
+          description: Permission code (e.g., "andy-docs:document:read")
+        resourceInstanceId:
+          type: string
+          description: Optional resource instance ID for instance-level checks
+
+    CheckAnyPermissionRequest:
+      type: object
+      required:
+        - subjectId
+        - permissions
+      properties:
+        subjectId:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        resourceInstanceId:
+          type: string
+
+    CheckPermissionResponse:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+
+    GetPermissionsResponse:
+      type: object
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+
+    GetRolesResponse:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            type: string
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        applicationCode:
+          type: string
+        parentRoleCode:
+          type: string
+        isSystem:
+          type: boolean
+
+    RoleDetail:
+      allOf:
+        - $ref: '#/components/schemas/Role'
+        - type: object
+          properties:
+            permissions:
+              type: array
+              items:
+                type: string
+
+    CreateRoleRequest:
+      type: object
+      required:
+        - code
+        - name
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        applicationCode:
+          type: string
+        parentRoleCode:
+          type: string
+
+    Subject:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        externalId:
+          type: string
+        provider:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+
+    ProvisionSubjectRequest:
+      type: object
+      required:
+        - externalId
+        - provider
+      properties:
+        externalId:
+          type: string
+        provider:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true

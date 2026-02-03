@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+option csharp_namespace = "Andy.Rbac.Grpc";
+
+package andy.rbac.v1;
+
+// RBAC service for permission checking and management
+service RbacService {
+  // Check if a subject has a specific permission
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse);
+
+  // Check if a subject has any of the specified permissions
+  rpc CheckAnyPermission(CheckAnyPermissionRequest) returns (CheckPermissionResponse);
+
+  // Get all permissions for a subject
+  rpc GetPermissions(GetPermissionsRequest) returns (GetPermissionsResponse);
+
+  // Get all roles for a subject
+  rpc GetRoles(GetRolesRequest) returns (GetRolesResponse);
+
+  // Provision or update a subject
+  rpc ProvisionSubject(ProvisionSubjectRequest) returns (SubjectResponse);
+
+  // Assign a role to a subject
+  rpc AssignRole(AssignRoleRequest) returns (AssignRoleResponse);
+
+  // Revoke a role from a subject
+  rpc RevokeRole(RevokeRoleRequest) returns (RevokeRoleResponse);
+
+  // Grant instance permission (sharing)
+  rpc GrantInstancePermission(GrantInstancePermissionRequest) returns (GrantInstancePermissionResponse);
+
+  // Revoke instance permission
+  rpc RevokeInstancePermission(RevokeInstancePermissionRequest) returns (RevokeInstancePermissionResponse);
+}
+
+// Permission check request
+message CheckPermissionRequest {
+  string subject_id = 1;
+  string permission = 2;  // Format: "app:resource:action"
+  optional string resource_instance_id = 3;
+}
+
+// Check any permission request
+message CheckAnyPermissionRequest {
+  string subject_id = 1;
+  repeated string permissions = 2;
+  optional string resource_instance_id = 3;
+}
+
+// Permission check response
+message CheckPermissionResponse {
+  bool allowed = 1;
+  string reason = 2;
+}
+
+// Get permissions request
+message GetPermissionsRequest {
+  string subject_id = 1;
+  optional string application_code = 2;
+}
+
+// Get permissions response
+message GetPermissionsResponse {
+  repeated string permissions = 1;
+}
+
+// Get roles request
+message GetRolesRequest {
+  string subject_id = 1;
+  optional string application_code = 2;
+}
+
+// Get roles response
+message GetRolesResponse {
+  repeated string roles = 1;
+}
+
+// Provision subject request
+message ProvisionSubjectRequest {
+  string external_id = 1;
+  string provider = 2;
+  optional string email = 3;
+  optional string display_name = 4;
+  map<string, string> metadata = 5;
+}
+
+// Subject response
+message SubjectResponse {
+  string id = 1;
+  string external_id = 2;
+  string provider = 3;
+  optional string email = 4;
+  optional string display_name = 5;
+  bool is_active = 6;
+}
+
+// Assign role request
+message AssignRoleRequest {
+  string subject_id = 1;
+  string role_code = 2;
+  optional string resource_instance_id = 3;
+  optional int64 expires_at_unix = 4;  // Unix timestamp
+}
+
+// Assign role response
+message AssignRoleResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Revoke role request
+message RevokeRoleRequest {
+  string subject_id = 1;
+  string role_code = 2;
+  optional string resource_instance_id = 3;
+}
+
+// Revoke role response
+message RevokeRoleResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Grant instance permission request
+message GrantInstancePermissionRequest {
+  string subject_id = 1;
+  string resource_type_code = 2;
+  string resource_instance_id = 3;
+  string action = 4;
+  optional int64 expires_at_unix = 5;
+}
+
+// Grant instance permission response
+message GrantInstancePermissionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Revoke instance permission request
+message RevokeInstancePermissionRequest {
+  string subject_id = 1;
+  string resource_type_code = 2;
+  string resource_instance_id = 3;
+  string action = 4;
+}
+
+// Revoke instance permission response
+message RevokeInstancePermissionResponse {
+  bool success = 1;
+  string message = 2;
+}

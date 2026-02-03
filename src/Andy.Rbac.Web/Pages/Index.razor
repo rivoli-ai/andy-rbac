@@ -1,0 +1,44 @@
+@page "/"
+
+<PageTitle>Dashboard - Andy RBAC</PageTitle>
+
+<h1>RBAC Dashboard</h1>
+
+<div class="dashboard-grid">
+    <div class="card">
+        <h3>Applications</h3>
+        <p class="stat">@_applicationCount</p>
+        <a href="/applications">Manage</a>
+    </div>
+
+    <div class="card">
+        <h3>Roles</h3>
+        <p class="stat">@_roleCount</p>
+        <a href="/roles">Manage</a>
+    </div>
+
+    <div class="card">
+        <h3>Subjects</h3>
+        <p class="stat">@_subjectCount</p>
+        <a href="/subjects">Manage</a>
+    </div>
+
+    <div class="card">
+        <h3>Recent Activity</h3>
+        <p class="stat">@_recentActivityCount</p>
+        <a href="/audit">View Log</a>
+    </div>
+</div>
+
+@code {
+    private int _applicationCount = 0;
+    private int _roleCount = 0;
+    private int _subjectCount = 0;
+    private int _recentActivityCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // TODO: Load stats from API
+        await Task.CompletedTask;
+    }
+}

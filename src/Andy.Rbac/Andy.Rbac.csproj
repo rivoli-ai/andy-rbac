@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>Andy.Rbac</PackageId>
+    <Version>1.0.0</Version>
+    <Description>RBAC (Role-Based Access Control) library for Andy applications. Provides permission checking, policy-based authorization, and integration with ASP.NET Core.</Description>
+    <PackageTags>rbac;authorization;permissions;security</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+</Project>

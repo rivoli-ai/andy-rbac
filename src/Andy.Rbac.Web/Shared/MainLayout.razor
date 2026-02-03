@@ -1,0 +1,20 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <nav class="sidebar">
+        <div class="brand">Andy RBAC</div>
+        <ul class="nav">
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/roles">Roles</a></li>
+            <li><a href="/subjects">Subjects</a></li>
+            <li><a href="/applications">Applications</a></li>
+            <li><a href="/audit">Audit Log</a></li>
+        </ul>
+    </nav>
+
+    <main>
+        <div class="content">
+            @Body
+        </div>
+    </main>
+</div>

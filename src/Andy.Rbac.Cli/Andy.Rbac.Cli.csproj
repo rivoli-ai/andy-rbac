@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <PackageId>Andy.Rbac.Cli</PackageId>
+    <Version>1.0.0</Version>
+    <Description>Command-line tool for managing Andy RBAC (applications, roles, teams, users).</Description>
+    <PackageTags>rbac;cli;admin</PackageTags>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>andy-rbac</ToolCommandName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Andy.Rbac.Client\Andy.Rbac.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Spectre.Console" />
+  </ItemGroup>
+
+</Project>
