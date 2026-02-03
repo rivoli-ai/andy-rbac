@@ -1,101 +1,189 @@
 @inherits LayoutComponentBase
 @inject NavigationManager Navigation
 
-<div class="page">
-    <nav class="sidebar">
-        <div class="sidebar-brand">
-            <div class="logo">R</div>
-            <span class="brand-text">Andy RBAC</span>
+<div class="app-layout">
+    <!-- Overlay for mobile -->
+    <div class="sidebar-overlay @(_sidebarOpen ? "active" : "")" @onclick="ToggleSidebar"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar @(_sidebarOpen ? "open" : "") @(_sidebarCollapsed ? "collapsed" : "")" id="sidebar">
+        <div class="sidebar-header">
+            <a href="/" class="sidebar-brand">
+                <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="4" y="4" width="24" height="24" rx="6" stroke="currentColor" stroke-width="2"/>
+                    <path d="M10 16L14 20L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <h1>Andy RBAC</h1>
+            </a>
+            <button class="sidebar-toggle" @onclick="ToggleCollapse" title="Toggle sidebar">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 6H16M4 10H16M4 14H16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </button>
         </div>
 
-        <div class="sidebar-nav">
+        <nav class="sidebar-nav">
             <div class="nav-section">
                 <div class="nav-section-title">Overview</div>
-                <ul class="nav-list">
-                    <li class="nav-item">
-                        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                            <span class="nav-icon">&#x1F4CA;</span>
-                            Dashboard
-                        </NavLink>
-                    </li>
-                </ul>
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="2" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+                        <rect x="10" y="2" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+                        <rect x="2" y="10" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+                        <rect x="10" y="10" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </NavLink>
             </div>
 
             <div class="nav-section">
                 <div class="nav-section-title">Access Control</div>
-                <ul class="nav-list">
-                    <li class="nav-item">
-                        <NavLink class="nav-link" href="applications">
-                            <span class="nav-icon">&#x1F4E6;</span>
-                            Applications
-                        </NavLink>
-                    </li>
-                    <li class="nav-item">
-                        <NavLink class="nav-link" href="roles">
-                            <span class="nav-icon">&#x1F511;</span>
-                            Roles
-                        </NavLink>
-                    </li>
-                    <li class="nav-item">
-                        <NavLink class="nav-link" href="subjects">
-                            <span class="nav-icon">&#x1F464;</span>
-                            Subjects
-                        </NavLink>
-                    </li>
-                    <li class="nav-item">
-                        <NavLink class="nav-link" href="teams">
-                            <span class="nav-icon">&#x1F465;</span>
-                            Teams
-                        </NavLink>
-                    </li>
-                </ul>
+                <NavLink class="nav-link" href="applications">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 12V6a2 2 0 0 0-1-1.73l-5-3a2 2 0 0 0-2 0l-5 3A2 2 0 0 0 1 6v6a2 2 0 0 0 1 1.73l5 3a2 2 0 0 0 2 0l5-3A2 2 0 0 0 15 12z" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M1.27 4.96L8 9.01l6.73-4.05M8 16.08V9" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    <span>Applications</span>
+                </NavLink>
+                <NavLink class="nav-link" href="roles">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 2l-1.5 1.5M9.31 7.69a4 4 0 1 1-5.66 5.66 4 4 0 0 1 5.66-5.66zm0 0L12 5m0 0l2.5 2.5L17 5l-2.5-2.5M12 5l2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>Roles</span>
+                </NavLink>
+                <NavLink class="nav-link" href="subjects">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="9" cy="6" r="3" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M3 16c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>Subjects</span>
+                </NavLink>
+                <NavLink class="nav-link" href="teams">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M13 16v-1.5a3 3 0 0 0-3-3H5a3 3 0 0 0-3 3V16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        <circle cx="7.5" cy="5.5" r="3" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M17 16v-1.5a3 3 0 0 0-2.25-2.9M12 2.6a3 3 0 0 1 0 5.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>Teams</span>
+                </NavLink>
             </div>
 
             <div class="nav-section">
                 <div class="nav-section-title">Monitoring</div>
-                <ul class="nav-list">
-                    <li class="nav-item">
-                        <NavLink class="nav-link" href="audit">
-                            <span class="nav-icon">&#x1F4DD;</span>
-                            Audit Log
-                        </NavLink>
-                    </li>
-                </ul>
+                <NavLink class="nav-link" href="audit">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="2" width="12" height="14" rx="1" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M6 6h6M6 9h6M6 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    <span>Audit Log</span>
+                </NavLink>
             </div>
-        </div>
+        </nav>
 
         <div class="sidebar-footer">
-            <div>Andy RBAC v0.1.0-alpha</div>
+            <AuthorizeView>
+                <Authorized>
+                    <div class="user-info">
+                        <div class="user-avatar">@GetUserInitial(context.User)</div>
+                        <div class="user-details">
+                            <div class="user-email">@GetUserEmail(context.User)</div>
+                            <div class="user-role">Administrator</div>
+                        </div>
+                    </div>
+                    <form method="post" action="authentication/logout">
+                        <button type="submit" class="btn-logout">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M6 14H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <path d="M11 11l3-3-3-3M14 8H6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Logout</span>
+                        </button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="authentication/login" class="btn-login">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M10 14h3a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                            <path d="M5 11l-3-3 3-3M2 8h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Sign In</span>
+                    </a>
+                </NotAuthorized>
+            </AuthorizeView>
         </div>
-    </nav>
+    </aside>
 
-    <div class="main-content">
-        <header class="header">
-            <div class="header-title">@GetPageTitle()</div>
-            <div class="header-actions">
-                <span class="text-muted">Admin</span>
-            </div>
+    <!-- Main content -->
+    <div class="main-wrapper">
+        <header class="main-header">
+            <button class="mobile-menu-btn" @onclick="ToggleSidebar">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+            <div></div>
         </header>
-
-        <div class="content">
+        <main class="main-content">
             @Body
-        </div>
+        </main>
     </div>
 </div>
 
+<div class="sidebar-footer-version">
+    Andy RBAC v0.1.0-alpha
+</div>
+
 @code {
-    private string GetPageTitle()
+    private bool _sidebarOpen = false;
+    private bool _sidebarCollapsed = false;
+
+    private void ToggleSidebar()
     {
-        var uri = Navigation.ToBaseRelativePath(Navigation.Uri);
-        return uri switch
-        {
-            "" => "Dashboard",
-            "applications" => "Applications",
-            "roles" => "Roles",
-            "subjects" => "Subjects",
-            "teams" => "Teams",
-            "audit" => "Audit Log",
-            _ => "Andy RBAC"
-        };
+        _sidebarOpen = !_sidebarOpen;
+    }
+
+    private void ToggleCollapse()
+    {
+        _sidebarCollapsed = !_sidebarCollapsed;
+    }
+
+    private string GetUserInitial(System.Security.Claims.ClaimsPrincipal user)
+    {
+        var name = user.Identity?.Name ?? user.FindFirst("email")?.Value ?? "U";
+        return name.Length > 0 ? name.Substring(0, 1).ToUpper() : "U";
+    }
+
+    private string GetUserEmail(System.Security.Claims.ClaimsPrincipal user)
+    {
+        return user.FindFirst("email")?.Value
+            ?? user.FindFirst("preferred_username")?.Value
+            ?? user.Identity?.Name
+            ?? "Unknown";
     }
 }
+
+<style>
+    .sidebar-footer-version {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: var(--sidebar-width);
+        padding: 0.5rem 1rem;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        background: var(--surface);
+        border-top: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+        text-align: center;
+    }
+
+    .sidebar.collapsed ~ .sidebar-footer-version {
+        width: var(--sidebar-collapsed-width);
+    }
+
+    @@media (max-width: 768px) {
+        .sidebar-footer-version {
+            display: none;
+        }
+    }
+</style>
