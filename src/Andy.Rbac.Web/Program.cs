@@ -15,6 +15,7 @@ builder.Services.AddAuthentication("Bearer")
     {
         options.Authority = builder.Configuration["Auth:Authority"];
         options.Audience = builder.Configuration["Auth:Audience"];
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
     });
 
 builder.Services.AddAuthorization();

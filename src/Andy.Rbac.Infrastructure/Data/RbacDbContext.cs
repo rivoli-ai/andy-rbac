@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Andy.Rbac.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Action = Andy.Rbac.Models.Action;
 
 namespace Andy.Rbac.Infrastructure.Data;
@@ -115,6 +118,26 @@ public class RbacDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // JSON value converter for Dictionary<string, object>
+        var dictionaryConverter = new ValueConverter<Dictionary<string, object>?, string?>(
+            v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object>>(v, (JsonSerializerOptions?)null));
+
+        var dictionaryComparer = new ValueComparer<Dictionary<string, object>?>(
+            (d1, d2) => JsonSerializer.Serialize(d1, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(d2, (JsonSerializerOptions?)null),
+            d => d == null ? 0 : JsonSerializer.Serialize(d, (JsonSerializerOptions?)null).GetHashCode(),
+            d => d == null ? null : JsonSerializer.Deserialize<Dictionary<string, object>>(JsonSerializer.Serialize(d, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null));
+
+        // JSON value converter for List<string>
+        var stringListConverter = new ValueConverter<List<string>, string?>(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => v == null ? new List<string>() : JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>());
+
+        var stringListComparer = new ValueComparer<List<string>>(
+            (l1, l2) => JsonSerializer.Serialize(l1, (JsonSerializerOptions?)null) == JsonSerializer.Serialize(l2, (JsonSerializerOptions?)null),
+            l => JsonSerializer.Serialize(l, (JsonSerializerOptions?)null).GetHashCode(),
+            l => JsonSerializer.Deserialize<List<string>>(JsonSerializer.Serialize(l, (JsonSerializerOptions?)null), (JsonSerializerOptions?)null) ?? new List<string>());
+
         // Subject
         modelBuilder.Entity<Subject>(entity =>
         {
@@ -124,7 +147,10 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.Provider).HasMaxLength(100).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(500);
             entity.Property(e => e.DisplayName).HasMaxLength(500);
-            entity.Property(e => e.Metadata).HasColumnType("jsonb");
+            entity.Property(e => e.Metadata)
+                .HasColumnType("jsonb")
+                .HasConversion(dictionaryConverter)
+                .Metadata.SetValueComparer(dictionaryComparer);
             entity.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
             entity.HasIndex(e => e.Email);
         });
@@ -157,7 +183,10 @@ public class RbacDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ExternalId).HasMaxLength(500).IsRequired();
             entity.Property(e => e.DisplayName).HasMaxLength(500);
-            entity.Property(e => e.Metadata).HasColumnType("jsonb");
+            entity.Property(e => e.Metadata)
+                .HasColumnType("jsonb")
+                .HasConversion(dictionaryConverter)
+                .Metadata.SetValueComparer(dictionaryComparer);
             entity.HasIndex(e => new { e.ResourceTypeId, e.ExternalId }).IsUnique();
             entity.HasOne(e => e.ResourceType)
                 .WithMany(r => r.Instances)
@@ -218,7 +247,10 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.ResourceInstanceId).HasMaxLength(500);
             entity.Property(e => e.PermissionCode).HasMaxLength(200);
             entity.Property(e => e.Result).HasMaxLength(20);
-            entity.Property(e => e.Context).HasColumnType("jsonb");
+            entity.Property(e => e.Context)
+                .HasColumnType("jsonb")
+                .HasConversion(dictionaryConverter)
+                .Metadata.SetValueComparer(dictionaryComparer);
             entity.Property(e => e.IpAddress).HasMaxLength(50);
             entity.Property(e => e.UserAgent).HasMaxLength(500);
             entity.HasIndex(e => e.Timestamp);
@@ -296,7 +328,10 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.Property(e => e.KeyHash).HasMaxLength(500).IsRequired();
             entity.Property(e => e.KeyPrefix).HasMaxLength(50).IsRequired();
-            entity.Property(e => e.Scopes).HasColumnType("jsonb");
+            entity.Property(e => e.Scopes)
+                .HasColumnType("jsonb")
+                .HasConversion(stringListConverter)
+                .Metadata.SetValueComparer(stringListComparer);
             entity.Property(e => e.LastUsedIp).HasMaxLength(50);
             entity.HasIndex(e => e.KeyPrefix).IsUnique();
             entity.HasOne(e => e.Subject)

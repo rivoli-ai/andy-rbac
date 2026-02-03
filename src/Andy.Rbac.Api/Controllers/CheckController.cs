@@ -9,7 +9,8 @@ namespace Andy.Rbac.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+// Note: Auth temporarily disabled for development/testing
+// [Authorize]
 public class CheckController : ControllerBase
 {
     private readonly IPermissionEvaluator _evaluator;

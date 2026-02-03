@@ -24,6 +24,9 @@ public static class ServiceCollectionExtensions
         // Add core RBAC services
         services.AddRbac(configuration);
 
+        // Register subject accessor
+        services.AddScoped<ICurrentSubjectAccessor, HttpContextSubjectAccessor>();
+
         // Configure HTTP client
         services.AddHttpClient<IRbacClient, RbacHttpClient>((sp, client) =>
         {
@@ -55,6 +58,9 @@ public static class ServiceCollectionExtensions
     {
         // Add core RBAC services
         services.AddRbac(configure);
+
+        // Register subject accessor
+        services.AddScoped<ICurrentSubjectAccessor, HttpContextSubjectAccessor>();
 
         // Configure HTTP client
         services.AddHttpClient<IRbacClient, RbacHttpClient>((sp, client) =>

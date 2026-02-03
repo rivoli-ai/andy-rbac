@@ -20,23 +20,36 @@ public class PermissionRepository : IPermissionRepository
     {
         var now = DateTimeOffset.UtcNow;
 
-        // Get permissions from role assignments
-        var rolePermissionsQuery = _db.SubjectRoles
+        // First get the role IDs assigned to the subject
+        var roleIds = await _db.SubjectRoles
             .Where(sr => sr.SubjectId == subjectId)
             .Where(sr => sr.ExpiresAt == null || sr.ExpiresAt > now)
             .Where(sr => sr.ResourceInstanceId == null) // Only global role assignments
-            .SelectMany(sr => GetRoleWithInheritedPermissions(sr.RoleId))
-            .SelectMany(r => r.RolePermissions)
+            .Select(sr => sr.RoleId)
+            .ToListAsync(ct);
+
+        if (!roleIds.Any())
+            return [];
+
+        // Get permissions from these roles (including parent roles up to 3 levels)
+        var query = _db.RolePermissions
+            .Where(rp => roleIds.Contains(rp.RoleId) ||
+                        (rp.Role.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRoleId.Value)) ||
+                        (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+            .Include(rp => rp.Permission)
+            .ThenInclude(p => p.ResourceType)
+            .ThenInclude(rt => rt.Application)
+            .Include(rp => rp.Permission)
+            .ThenInclude(p => p.Action)
             .Select(rp => rp.Permission);
 
         if (!string.IsNullOrEmpty(applicationCode))
         {
-            rolePermissionsQuery = rolePermissionsQuery
-                .Where(p => p.ResourceType.Application.Code == applicationCode);
+            query = query.Where(p => p.ResourceType.Application != null && p.ResourceType.Application.Code == applicationCode);
         }
 
-        var permissions = await rolePermissionsQuery
-            .Select(p => $"{p.ResourceType.Application.Code}:{p.ResourceType.Code}:{p.Action.Code}")
+        var permissions = await query
+            .Select(p => p.ResourceType.Application!.Code + ":" + p.ResourceType.Code + ":" + p.Action.Code)
             .Distinct()
             .ToListAsync(ct);
 
@@ -85,20 +98,34 @@ public class PermissionRepository : IPermissionRepository
         var resourceCode = parts[1];
         var actionCode = parts[2];
 
-        // Check role-based permissions
-        var hasRolePermission = await _db.SubjectRoles
+        // First get the role IDs assigned to the subject
+        var roleIds = await _db.SubjectRoles
             .Where(sr => sr.SubjectId == subjectId)
             .Where(sr => sr.ExpiresAt == null || sr.ExpiresAt > now)
             .Where(sr => sr.ResourceInstanceId == null || sr.ResourceInstanceId == resourceInstanceId)
-            .SelectMany(sr => GetRoleWithInheritedPermissions(sr.RoleId))
-            .SelectMany(r => r.RolePermissions)
-            .AnyAsync(rp =>
-                rp.Permission.ResourceType.Application.Code == appCode &&
-                rp.Permission.ResourceType.Code == resourceCode &&
-                rp.Permission.Action.Code == actionCode, ct);
+            .Select(sr => sr.RoleId)
+            .ToListAsync(ct);
 
-        if (hasRolePermission)
-            return true;
+        if (!roleIds.Any())
+        {
+            // Check instance-level permissions and ownership below
+        }
+        else
+        {
+            // Check role-based permissions (including parent roles)
+            var hasRolePermission = await _db.RolePermissions
+                .Where(rp => roleIds.Contains(rp.RoleId) ||
+                            (rp.Role.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRoleId.Value)) ||
+                            (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+                .AnyAsync(rp =>
+                    rp.Permission.ResourceType.Application != null &&
+                    rp.Permission.ResourceType.Application.Code == appCode &&
+                    rp.Permission.ResourceType.Code == resourceCode &&
+                    rp.Permission.Action.Code == actionCode, ct);
+
+            if (hasRolePermission)
+                return true;
+        }
 
         // Check instance-level permissions if resource instance is specified
         if (!string.IsNullOrEmpty(resourceInstanceId))
@@ -147,18 +174,4 @@ public class PermissionRepository : IPermissionRepository
             .ToListAsync(ct);
     }
 
-    /// <summary>
-    /// Gets a role and all its parent roles (for inheritance).
-    /// </summary>
-    private IQueryable<Role> GetRoleWithInheritedPermissions(Guid roleId)
-    {
-        // This is a recursive CTE in PostgreSQL
-        // For simplicity, we'll use a simpler approach with limited depth
-        // In production, you might want to use a proper recursive CTE
-        return _db.Roles
-            .Where(r => r.Id == roleId)
-            .Include(r => r.ParentRole)
-            .ThenInclude(p => p!.ParentRole)
-            .ThenInclude(p => p!.ParentRole); // Support up to 3 levels of inheritance
-    }
 }

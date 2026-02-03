@@ -1,26 +1,37 @@
 using System.ComponentModel;
 using Andy.Rbac.Api.Services;
-using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Models;
-using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 
 namespace Andy.Rbac.Api.Mcp;
 
 /// <summary>
 /// MCP tools for AI assistants to query and manage RBAC.
+/// All operations delegate to shared services (same code as REST API).
 /// </summary>
 [McpServerToolType]
 public class RbacMcpTools
 {
-    private readonly RbacDbContext _db;
     private readonly IPermissionEvaluator _evaluator;
+    private readonly IApplicationService _applicationService;
+    private readonly IRoleService _roleService;
+    private readonly ITeamService _teamService;
+    private readonly ISubjectService _subjectService;
     private readonly ILogger<RbacMcpTools> _logger;
 
-    public RbacMcpTools(RbacDbContext db, IPermissionEvaluator evaluator, ILogger<RbacMcpTools> logger)
+    public RbacMcpTools(
+        IPermissionEvaluator evaluator,
+        IApplicationService applicationService,
+        IRoleService roleService,
+        ITeamService teamService,
+        ISubjectService subjectService,
+        ILogger<RbacMcpTools> logger)
     {
-        _db = db;
         _evaluator = evaluator;
+        _applicationService = applicationService;
+        _roleService = roleService;
+        _teamService = teamService;
+        _subjectService = subjectService;
         _logger = logger;
     }
 
@@ -28,13 +39,13 @@ public class RbacMcpTools
 
     [McpServerTool]
     [Description("Check if a user has a specific permission. Returns true/false with reason.")]
-    public async Task<PermissionCheckResult> CheckPermission(
+    public async Task<McpPermissionCheckResult> CheckPermission(
         [Description("External ID of the user (e.g., OAuth sub claim)")] string subjectId,
         [Description("Permission code (e.g., 'andy-docs:document:read')")] string permission,
         [Description("Optional resource instance ID for instance-level checks")] string? resourceInstanceId = null)
     {
         var result = await _evaluator.CheckPermissionAsync(subjectId, permission, resourceInstanceId);
-        return new PermissionCheckResult(result.Allowed, result.Reason ?? (result.Allowed ? "Permission granted" : "Permission denied"));
+        return new McpPermissionCheckResult(result.Allowed, result.Reason ?? (result.Allowed ? "Permission granted" : "Permission denied"));
     }
 
     [McpServerTool]
@@ -61,118 +72,65 @@ public class RbacMcpTools
 
     [McpServerTool]
     [Description("List all registered applications in the RBAC system.")]
-    public async Task<List<ApplicationInfo>> ListApplications()
+    public async Task<List<McpApplicationInfo>> ListApplications()
     {
-        var apps = await _db.Applications
-            .AsNoTracking()
-            .OrderBy(a => a.Name)
-            .Select(a => new ApplicationInfo(
-                a.Id,
-                a.Code,
-                a.Name,
-                a.Description,
-                a.ResourceTypes.Count,
-                a.Roles.Count))
-            .ToListAsync();
-
-        return apps;
+        var result = await _applicationService.GetAllAsync();
+        return result.Applications.Select(a => new McpApplicationInfo(
+            a.Id, a.Code, a.Name, a.Description, a.ResourceTypeCount, a.RoleCount)).ToList();
     }
 
     [McpServerTool]
     [Description("Get detailed information about an application including its resource types and roles.")]
-    public async Task<ApplicationDetail?> GetApplication(
+    public async Task<McpApplicationDetail?> GetApplication(
         [Description("Application code (e.g., 'andy-docs')")] string applicationCode)
     {
-        var app = await _db.Applications
-            .Include(a => a.ResourceTypes)
-            .Include(a => a.Roles)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Code == applicationCode);
+        var result = await _applicationService.GetByCodeAsync(applicationCode);
+        if (result == null) return null;
 
-        if (app == null) return null;
-
-        return new ApplicationDetail(
-            app.Id,
-            app.Code,
-            app.Name,
-            app.Description,
-            app.ResourceTypes.Select(rt => new ResourceTypeInfo(rt.Code, rt.Name, rt.SupportsInstances)).ToList(),
-            app.Roles.Select(r => new RoleInfo(r.Code, r.Name, r.IsSystem)).ToList());
+        var app = result.Application;
+        return new McpApplicationDetail(
+            app.Id, app.Code, app.Name, app.Description,
+            app.ResourceTypes.Select(rt => new McpResourceTypeInfo(rt.Code, rt.Name, rt.SupportsInstances)).ToList(),
+            app.Roles.Select(r => new McpRoleInfo(r.Code, r.Name, r.IsSystem, null)).ToList());
     }
 
     [McpServerTool]
     [Description("Create a new application in the RBAC system.")]
-    public async Task<ApplicationInfo> CreateApplication(
+    public async Task<McpApplicationInfo> CreateApplication(
         [Description("Unique code (e.g., 'my-app')")] string code,
         [Description("Display name")] string name,
         [Description("Optional description")] string? description = null)
     {
-        var app = new Application { Code = code, Name = name, Description = description };
-        _db.Applications.Add(app);
-        await _db.SaveChangesAsync();
-
+        var result = await _applicationService.CreateAsync(new CreateApplicationRequest(code, name, description));
+        var app = result.Application;
         _logger.LogInformation("MCP: Created application {AppCode}", code);
-
-        return new ApplicationInfo(app.Id, app.Code, app.Name, app.Description, 0, 0);
+        return new McpApplicationInfo(app.Id, app.Code, app.Name, app.Description, 0, 0);
     }
 
     // ==================== Role Management ====================
 
     [McpServerTool]
     [Description("List all roles, optionally filtered by application.")]
-    public async Task<List<RoleInfo>> ListRoles(
+    public async Task<List<McpRoleInfo>> ListRoles(
         [Description("Optional application code to filter roles")] string? applicationCode = null)
     {
-        var query = _db.Roles.Include(r => r.Application).AsNoTracking();
-
-        if (!string.IsNullOrEmpty(applicationCode))
-            query = query.Where(r => r.ApplicationId == null || r.Application!.Code == applicationCode);
-
-        return await query
-            .OrderBy(r => r.Name)
-            .Select(r => new RoleInfo(r.Code, r.Name, r.IsSystem, r.Application != null ? r.Application.Code : null))
-            .ToListAsync();
+        var result = await _roleService.GetAllAsync(applicationCode);
+        return result.Roles.Select(r => new McpRoleInfo(r.Code, r.Name, r.IsSystem, r.ApplicationCode)).ToList();
     }
 
     [McpServerTool]
     [Description("Create a new role in the RBAC system.")]
-    public async Task<RoleInfo> CreateRole(
+    public async Task<McpRoleInfo> CreateRole(
         [Description("Unique role code (e.g., 'editor')")] string code,
         [Description("Display name")] string name,
         [Description("Optional description")] string? description = null,
         [Description("Optional application code to scope the role")] string? applicationCode = null,
         [Description("Optional parent role code for inheritance")] string? parentRoleCode = null)
     {
-        Guid? appId = null;
-        if (!string.IsNullOrEmpty(applicationCode))
-        {
-            var app = await _db.Applications.FirstOrDefaultAsync(a => a.Code == applicationCode);
-            appId = app?.Id;
-        }
-
-        Guid? parentId = null;
-        if (!string.IsNullOrEmpty(parentRoleCode))
-        {
-            var parent = await _db.Roles.FirstOrDefaultAsync(r => r.Code == parentRoleCode);
-            parentId = parent?.Id;
-        }
-
-        var role = new Role
-        {
-            Code = code,
-            Name = name,
-            Description = description,
-            ApplicationId = appId,
-            ParentRoleId = parentId,
-            IsSystem = false
-        };
-
-        _db.Roles.Add(role);
-        await _db.SaveChangesAsync();
-
+        var result = await _roleService.CreateAsync(new CreateRoleRequest(code, name, description, applicationCode, parentRoleCode));
+        var role = result.Role;
         _logger.LogInformation("MCP: Created role {RoleCode}", code);
-
-        return new RoleInfo(role.Code, role.Name, role.IsSystem, applicationCode);
+        return new McpRoleInfo(role.Code, role.Name, role.IsSystem, role.ApplicationCode);
     }
 
     [McpServerTool]
@@ -182,32 +140,9 @@ public class RbacMcpTools
         [Description("Role code to assign")] string roleCode,
         [Description("Optional resource instance ID to scope the assignment")] string? resourceInstanceId = null)
     {
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId);
-        if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
-
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode);
-        if (role == null)
-            return $"Error: Role '{roleCode}' not found";
-
-        var existing = await _db.SubjectRoles
-            .AnyAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id && sr.ResourceInstanceId == resourceInstanceId);
-
-        if (existing)
-            return $"Role '{roleCode}' is already assigned to user";
-
-        _db.SubjectRoles.Add(new SubjectRole
-        {
-            SubjectId = subject.Id,
-            RoleId = role.Id,
-            ResourceInstanceId = resourceInstanceId
-        });
-
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("MCP: Assigned role {RoleCode} to {SubjectId}", roleCode, subjectExternalId);
-
-        return $"Successfully assigned role '{roleCode}' to user '{subjectExternalId}'";
+        var message = await _roleService.AssignToSubjectAsync(subjectExternalId, roleCode, resourceInstanceId);
+        _logger.LogInformation("MCP: {Message}", message);
+        return message;
     }
 
     [McpServerTool]
@@ -217,95 +152,36 @@ public class RbacMcpTools
         [Description("Role code to revoke")] string roleCode,
         [Description("Optional resource instance ID")] string? resourceInstanceId = null)
     {
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId);
-        if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
-
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode);
-        if (role == null)
-            return $"Error: Role '{roleCode}' not found";
-
-        var assignment = await _db.SubjectRoles
-            .FirstOrDefaultAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id && sr.ResourceInstanceId == resourceInstanceId);
-
-        if (assignment == null)
-            return $"Role '{roleCode}' is not assigned to user";
-
-        _db.SubjectRoles.Remove(assignment);
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("MCP: Revoked role {RoleCode} from {SubjectId}", roleCode, subjectExternalId);
-
-        return $"Successfully revoked role '{roleCode}' from user '{subjectExternalId}'";
+        var message = await _roleService.RevokeFromSubjectAsync(subjectExternalId, roleCode, resourceInstanceId);
+        _logger.LogInformation("MCP: {Message}", message);
+        return message;
     }
 
     // ==================== Team Management ====================
 
     [McpServerTool]
     [Description("List all teams in the RBAC system.")]
-    public async Task<List<TeamInfo>> ListTeams(
+    public async Task<List<McpTeamInfo>> ListTeams(
         [Description("Optional application code to filter")] string? applicationCode = null)
     {
-        var query = _db.Teams
-            .Include(t => t.Application)
-            .Include(t => t.ParentTeam)
-            .AsNoTracking();
-
-        if (!string.IsNullOrEmpty(applicationCode))
-            query = query.Where(t => t.ApplicationId == null || t.Application!.Code == applicationCode);
-
-        return await query
-            .OrderBy(t => t.Name)
-            .Select(t => new TeamInfo(
-                t.Id,
-                t.Code,
-                t.Name,
-                t.Description,
-                t.ParentTeam != null ? t.ParentTeam.Code : null,
-                t.Application != null ? t.Application.Code : null,
-                t.Members.Count,
-                t.IsActive))
-            .ToListAsync();
+        var result = await _teamService.GetAllAsync(applicationCode);
+        return result.Teams.Select(t => new McpTeamInfo(
+            t.Id, t.Code, t.Name, t.Description, t.ParentTeamCode, t.ApplicationCode, t.MemberCount, t.IsActive)).ToList();
     }
 
     [McpServerTool]
     [Description("Create a new team.")]
-    public async Task<TeamInfo> CreateTeam(
+    public async Task<McpTeamInfo> CreateTeam(
         [Description("Unique team code (e.g., 'engineering')")] string code,
         [Description("Display name")] string name,
         [Description("Optional description")] string? description = null,
         [Description("Optional parent team code for hierarchy")] string? parentTeamCode = null,
         [Description("Optional application code to scope the team")] string? applicationCode = null)
     {
-        Guid? parentId = null;
-        if (!string.IsNullOrEmpty(parentTeamCode))
-        {
-            var parent = await _db.Teams.FirstOrDefaultAsync(t => t.Code == parentTeamCode);
-            parentId = parent?.Id;
-        }
-
-        Guid? appId = null;
-        if (!string.IsNullOrEmpty(applicationCode))
-        {
-            var app = await _db.Applications.FirstOrDefaultAsync(a => a.Code == applicationCode);
-            appId = app?.Id;
-        }
-
-        var team = new Team
-        {
-            Code = code,
-            Name = name,
-            Description = description,
-            ParentTeamId = parentId,
-            ApplicationId = appId
-        };
-
-        _db.Teams.Add(team);
-        await _db.SaveChangesAsync();
-
+        var result = await _teamService.CreateAsync(new CreateTeamRequest(code, name, description, parentTeamCode, applicationCode));
+        var team = result.Team;
         _logger.LogInformation("MCP: Created team {TeamCode}", code);
-
-        return new TeamInfo(team.Id, team.Code, team.Name, team.Description, parentTeamCode, applicationCode, 0, true);
+        return new McpTeamInfo(team.Id, team.Code, team.Name, team.Description, team.ParentTeamCode, team.ApplicationCode, 0, true);
     }
 
     [McpServerTool]
@@ -315,32 +191,12 @@ public class RbacMcpTools
         [Description("External ID of the user")] string subjectExternalId,
         [Description("Membership role: Member, Admin, or Owner")] string membershipRole = "Member")
     {
-        var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode);
-        if (team == null)
-            return $"Error: Team '{teamCode}' not found";
-
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId);
-        if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
-
-        if (await _db.TeamMembers.AnyAsync(tm => tm.TeamId == team.Id && tm.SubjectId == subject.Id))
-            return $"User is already a member of team '{teamCode}'";
-
         if (!Enum.TryParse<TeamMembershipRole>(membershipRole, true, out var role))
             role = TeamMembershipRole.Member;
 
-        _db.TeamMembers.Add(new TeamMember
-        {
-            TeamId = team.Id,
-            SubjectId = subject.Id,
-            MembershipRole = role
-        });
-
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("MCP: Added {SubjectId} to team {TeamCode}", subjectExternalId, teamCode);
-
-        return $"Successfully added user '{subjectExternalId}' to team '{teamCode}' as {role}";
+        var message = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role);
+        _logger.LogInformation("MCP: {Message}", message);
+        return message;
     }
 
     [McpServerTool]
@@ -349,128 +205,68 @@ public class RbacMcpTools
         [Description("Team code")] string teamCode,
         [Description("Role code to assign")] string roleCode)
     {
-        var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode);
-        if (team == null)
-            return $"Error: Team '{teamCode}' not found";
-
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode);
-        if (role == null)
-            return $"Error: Role '{roleCode}' not found";
-
-        if (await _db.TeamRoles.AnyAsync(tr => tr.TeamId == team.Id && tr.RoleId == role.Id))
-            return $"Role '{roleCode}' is already assigned to team";
-
-        _db.TeamRoles.Add(new TeamRole { TeamId = team.Id, RoleId = role.Id });
-        await _db.SaveChangesAsync();
-
-        _logger.LogInformation("MCP: Assigned role {RoleCode} to team {TeamCode}", roleCode, teamCode);
-
-        return $"Successfully assigned role '{roleCode}' to team '{teamCode}'";
+        var message = await _roleService.AssignToTeamAsync(teamCode, roleCode);
+        _logger.LogInformation("MCP: {Message}", message);
+        return message;
     }
 
     // ==================== User Management ====================
 
     [McpServerTool]
     [Description("Search for users by email, name, or external ID.")]
-    public async Task<List<UserInfo>> SearchUsers(
+    public async Task<List<McpUserInfo>> SearchUsers(
         [Description("Search query (email, name, or external ID)")] string query,
         [Description("Maximum results to return")] int limit = 20)
     {
-        return await _db.Subjects
-            .AsNoTracking()
-            .Where(s =>
-                (s.Email != null && s.Email.Contains(query)) ||
-                (s.DisplayName != null && s.DisplayName.Contains(query)) ||
-                s.ExternalId.Contains(query))
-            .Take(limit)
-            .Select(s => new UserInfo(
-                s.Id,
-                s.ExternalId,
-                s.Provider,
-                s.Email,
-                s.DisplayName,
-                s.IsActive))
-            .ToListAsync();
+        var result = await _subjectService.SearchAsync(query, limit);
+        return result.Subjects.Select(s => new McpUserInfo(
+            s.Id, s.ExternalId, s.Provider, s.Email, s.DisplayName, s.IsActive)).ToList();
     }
 
     [McpServerTool]
     [Description("Get detailed information about a user including their roles and team memberships.")]
-    public async Task<UserDetail?> GetUser(
+    public async Task<McpUserDetail?> GetUser(
         [Description("External ID of the user")] string subjectExternalId)
     {
-        var subject = await _db.Subjects
-            .Include(s => s.SubjectRoles)
-            .ThenInclude(sr => sr.Role)
-            .ThenInclude(r => r.Application)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId);
+        var result = await _subjectService.GetByExternalIdAsync(subjectExternalId);
+        if (result == null) return null;
 
-        if (subject == null) return null;
-
-        var teamMemberships = await _db.TeamMembers
-            .Include(tm => tm.Team)
-            .Where(tm => tm.SubjectId == subject.Id)
-            .Select(tm => new TeamMembershipInfo(tm.Team.Code, tm.Team.Name, tm.MembershipRole.ToString()))
-            .ToListAsync();
-
-        return new UserDetail(
+        var subject = result.Subject;
+        return new McpUserDetail(
             subject.Id,
             subject.ExternalId,
             subject.Provider,
             subject.Email,
             subject.DisplayName,
             subject.IsActive,
-            subject.SubjectRoles.Select(sr => new UserRoleInfo(
-                sr.Role.Code,
-                sr.Role.Application?.Code,
-                sr.ResourceInstanceId)).ToList(),
-            teamMemberships);
+            subject.Roles.Select(r => new McpUserRoleInfo(r.RoleCode, r.ApplicationCode, r.ResourceInstanceId)).ToList(),
+            subject.Teams.Select(t => new McpTeamMembershipInfo(t.TeamCode, t.TeamName, t.MembershipRole)).ToList());
     }
 
-    // ==================== Audit ====================
-
     [McpServerTool]
-    [Description("Get recent RBAC audit events.")]
-    public async Task<List<AuditEventInfo>> GetRecentAuditEvents(
-        [Description("Maximum events to return")] int limit = 50,
-        [Description("Optional event type filter")] string? eventType = null,
-        [Description("Optional subject ID filter")] string? subjectId = null)
+    [Description("Create a new user/subject in the RBAC system.")]
+    public async Task<McpUserInfo> CreateUser(
+        [Description("External ID (e.g., OAuth sub claim)")] string externalId,
+        [Description("Provider (e.g., 'andy-auth', 'azure-ad')")] string provider,
+        [Description("Optional email address")] string? email = null,
+        [Description("Optional display name")] string? displayName = null)
     {
-        var query = _db.AuditLogs.AsNoTracking();
-
-        if (!string.IsNullOrEmpty(eventType))
-            query = query.Where(a => a.EventType == eventType);
-
-        if (!string.IsNullOrEmpty(subjectId))
-        {
-            var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectId);
-            if (subject != null)
-                query = query.Where(a => a.SubjectId == subject.Id);
-        }
-
-        return await query
-            .OrderByDescending(a => a.Timestamp)
-            .Take(limit)
-            .Select(a => new AuditEventInfo(
-                a.Timestamp,
-                a.EventType,
-                a.ResourceType,
-                a.PermissionCode,
-                a.Result))
-            .ToListAsync();
+        var result = await _subjectService.CreateAsync(new CreateSubjectRequest(externalId, provider, email, displayName));
+        var subject = result.Subject;
+        _logger.LogInformation("MCP: Created user {ExternalId}", externalId);
+        return new McpUserInfo(subject.Id, subject.ExternalId, subject.Provider, subject.Email, subject.DisplayName, subject.IsActive);
     }
 }
 
-// ==================== DTOs ====================
+// ==================== MCP DTOs ====================
 
-public record PermissionCheckResult(bool Allowed, string Reason);
-public record ApplicationInfo(Guid Id, string Code, string Name, string? Description, int ResourceTypeCount, int RoleCount);
-public record ApplicationDetail(Guid Id, string Code, string Name, string? Description, List<ResourceTypeInfo> ResourceTypes, List<RoleInfo> Roles);
-public record ResourceTypeInfo(string Code, string Name, bool SupportsInstances);
-public record RoleInfo(string Code, string Name, bool IsSystem, string? ApplicationCode = null);
-public record TeamInfo(Guid Id, string Code, string Name, string? Description, string? ParentTeamCode, string? ApplicationCode, int MemberCount, bool IsActive);
-public record UserInfo(Guid Id, string ExternalId, string Provider, string? Email, string? DisplayName, bool IsActive);
-public record UserDetail(Guid Id, string ExternalId, string Provider, string? Email, string? DisplayName, bool IsActive, List<UserRoleInfo> Roles, List<TeamMembershipInfo> Teams);
-public record UserRoleInfo(string RoleCode, string? ApplicationCode, string? ResourceInstanceId);
-public record TeamMembershipInfo(string TeamCode, string TeamName, string MembershipRole);
-public record AuditEventInfo(DateTimeOffset Timestamp, string EventType, string? ResourceType, string? PermissionCode, string? Result);
+public record McpPermissionCheckResult(bool Allowed, string Reason);
+public record McpApplicationInfo(Guid Id, string Code, string Name, string? Description, int ResourceTypeCount, int RoleCount);
+public record McpApplicationDetail(Guid Id, string Code, string Name, string? Description, List<McpResourceTypeInfo> ResourceTypes, List<McpRoleInfo> Roles);
+public record McpResourceTypeInfo(string Code, string Name, bool SupportsInstances);
+public record McpRoleInfo(string Code, string Name, bool IsSystem, string? ApplicationCode = null);
+public record McpTeamInfo(Guid Id, string Code, string Name, string? Description, string? ParentTeamCode, string? ApplicationCode, int MemberCount, bool IsActive);
+public record McpUserInfo(Guid Id, string ExternalId, string Provider, string? Email, string? DisplayName, bool IsActive);
+public record McpUserDetail(Guid Id, string ExternalId, string Provider, string? Email, string? DisplayName, bool IsActive, List<McpUserRoleInfo> Roles, List<McpTeamMembershipInfo> Teams);
+public record McpUserRoleInfo(string RoleCode, string? ApplicationCode, string? ResourceInstanceId);
+public record McpTeamMembershipInfo(string TeamCode, string TeamName, string MembershipRole);

@@ -37,6 +37,10 @@ builder.Services.AddScoped<IPermissionRepository, PermissionRepository>();
 
 // Add services
 builder.Services.AddScoped<IPermissionEvaluator, PermissionEvaluator>();
+builder.Services.AddScoped<IApplicationService, ApplicationService>();
+builder.Services.AddScoped<IRoleService, RoleService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<ISubjectService, SubjectService>();
 
 // Add MCP Server for AI assistant integration
 builder.Services
@@ -113,3 +117,6 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Make Program accessible to test project
+public partial class Program { }

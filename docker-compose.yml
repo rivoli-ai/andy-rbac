@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: andy-rbac-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: andy_rbac
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Andy.Rbac.Api/Dockerfile
+    container_name: andy-rbac-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=andy_rbac;Username=postgres;Password=postgres
+      - Auth__Authority=http://localhost:7001
+      - Auth__Audience=andy-rbac
+      - Cors__Origins__0=http://localhost:5180
+      - Cors__Origins__1=http://localhost:3000
+    ports:
+      - "5100:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: src/Andy.Rbac.Web/Dockerfile
+    container_name: andy-rbac-web
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - Rbac__ApplicationCode=andy-rbac
+      - Rbac__ApiBaseUrl=http://api:8080
+      - Auth__Authority=http://localhost:7001
+      - Auth__Audience=andy-rbac-web
+    ports:
+      - "5180:8080"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

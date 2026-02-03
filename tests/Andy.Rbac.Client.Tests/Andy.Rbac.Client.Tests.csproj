@@ -1,14 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Coverage exclusions for generated code -->
-  <PropertyGroup>
-    <ExcludeFromCodeCoverage>[Andy.Rbac.Api]Andy.Rbac.Grpc.*,[Andy.Rbac.Infrastructure]Andy.Rbac.Infrastructure.Data.Migrations.*</ExcludeFromCodeCoverage>
-  </PropertyGroup>
-
   <ItemGroup>
     <ProjectReference Include="..\..\src\Andy.Rbac\Andy.Rbac.csproj" />
-    <ProjectReference Include="..\..\src\Andy.Rbac.Api\Andy.Rbac.Api.csproj" />
-    <ProjectReference Include="..\..\src\Andy.Rbac.Infrastructure\Andy.Rbac.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Andy.Rbac.Client\Andy.Rbac.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,8 +19,6 @@
     </PackageReference>
     <PackageReference Include="Moq" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
-    <PackageReference Include="Grpc.AspNetCore" />
   </ItemGroup>
 
 </Project>

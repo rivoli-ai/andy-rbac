@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>[Andy.Rbac.Api]Andy.Rbac.Grpc.*,[Andy.Rbac.Infrastructure]Andy.Rbac.Infrastructure.Data.Migrations.*,[Andy.Rbac.Infrastructure]Andy.Rbac.Infrastructure.Data.RbacDbContextFactory</Exclude>
+          <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute</ExcludeByAttribute>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
