@@ -1,6 +1,7 @@
 @page "/subjects"
 @using Andy.Rbac.Web.Services
 @inject RbacApiService ApiService
+@inject NavigationManager Navigation
 
 <PageTitle>Subjects - Andy RBAC</PageTitle>
 
@@ -74,7 +75,7 @@
                         </td>
                         <td class="text-muted">@subject.CreatedAt.ToLocalTime().ToString("d")</td>
                         <td>
-                            <button class="btn btn-secondary btn-sm">View</button>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewSubject(subject)">View</button>
                             @if (subject.IsActive)
                             {
                                 <button class="btn btn-danger btn-sm" @onclick="() => DeactivateSubject(subject)">Deactivate</button>
@@ -216,6 +217,11 @@
         {
             _saving = false;
         }
+    }
+
+    private void ViewSubject(SubjectDto subject)
+    {
+        Navigation.NavigateTo($"/subjects/{subject.Id}");
     }
 
     private async Task DeactivateSubject(SubjectDto subject)

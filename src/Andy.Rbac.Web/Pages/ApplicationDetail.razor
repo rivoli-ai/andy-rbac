@@ -1,0 +1,236 @@
+@page "/applications/{Code}"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
+@inject NavigationManager Navigation
+
+<PageTitle>@(_application?.Name ?? "Application") - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <div class="d-flex align-center gap-2 mb-3">
+                <a href="/applications" class="btn btn-secondary btn-sm">Back to Applications</a>
+            </div>
+            <h1>@(_application?.Name ?? "Loading...")</h1>
+            <p class="subtitle">@(_application?.Description ?? "Application details and configuration")</p>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="loading">
+        <div class="spinner"></div>
+    </div>
+}
+else if (_application != null)
+{
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon primary">C</div>
+            <div class="stat-content">
+                <div class="stat-label">Code</div>
+                <div class="stat-value" style="font-size: 1.25rem;"><code>@_application.Code</code></div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon info">R</div>
+            <div class="stat-content">
+                <div class="stat-label">Resource Types</div>
+                <div class="stat-value">@_application.ResourceTypeCount</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon success">R</div>
+            <div class="stat-content">
+                <div class="stat-label">Roles</div>
+                <div class="stat-value">@_application.RoleCount</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon warning">D</div>
+            <div class="stat-content">
+                <div class="stat-label">Created</div>
+                <div class="stat-value" style="font-size: 1.25rem;">@_application.CreatedAt.ToLocalTime().ToString("d")</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Roles in this Application</h3>
+            <button class="btn btn-primary btn-sm" @onclick="ShowCreateRoleModal">+ Add Role</button>
+        </div>
+        @if (_roles.Count == 0)
+        {
+            <div class="empty-state" style="padding: 2rem 1rem;">
+                <div class="empty-state-title">No roles defined</div>
+                <p class="empty-state-text">Create roles for this application to manage permissions.</p>
+            </div>
+        }
+        else
+        {
+            <table class="table" style="margin: -1.5rem; margin-top: 0; width: calc(100% + 3rem);">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>System</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var role in _roles)
+                    {
+                        <tr>
+                            <td><code>@role.Code</code></td>
+                            <td>@role.Name</td>
+                            <td>
+                                @if (role.IsSystem)
+                                {
+                                    <span class="badge badge-info">System</span>
+                                }
+                            </td>
+                            <td>
+                                <button class="btn btn-secondary btn-sm" @onclick="() => ViewRole(role)">View</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@if (_showCreateRoleModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">Create Role</h3>
+                <button class="btn btn-icon" @onclick="CloseModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label required">Code</label>
+                    <input type="text" class="form-control" @bind="_newRoleCode" placeholder="admin" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Name</label>
+                    <input type="text" class="form-control" @bind="_newRoleName" placeholder="Administrator" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" @bind="_newRoleDescription" rows="3" placeholder="Optional description"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateRole" disabled="@_saving">
+                    @(_saving ? "Creating..." : "Create")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string Code { get; set; } = "";
+
+    private bool _loading = true;
+    private bool _saving = false;
+    private string? _error;
+    private ApplicationDto? _application;
+    private List<RoleDto> _roles = new();
+    private bool _showCreateRoleModal = false;
+
+    private string _newRoleCode = "";
+    private string _newRoleName = "";
+    private string? _newRoleDescription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadApplication();
+    }
+
+    private async Task LoadApplication()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var applications = await ApiService.GetApplicationsAsync();
+            _application = applications.FirstOrDefault(a => a.Code == Code);
+
+            if (_application == null)
+            {
+                _error = $"Application '{Code}' not found.";
+            }
+            else
+            {
+                _roles = await ApiService.GetRolesAsync(Code);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load application: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ShowCreateRoleModal()
+    {
+        _newRoleCode = "";
+        _newRoleName = "";
+        _newRoleDescription = null;
+        _showCreateRoleModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showCreateRoleModal = false;
+    }
+
+    private async Task CreateRole()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoleCode) || string.IsNullOrWhiteSpace(_newRoleName))
+            return;
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            var request = new CreateRoleRequest(_newRoleCode, _newRoleName, _newRoleDescription, Code, null);
+            await ApiService.CreateRoleAsync(request);
+            CloseModal();
+            _roles = await ApiService.GetRolesAsync(Code);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create role: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ViewRole(RoleDto role)
+    {
+        Navigation.NavigateTo($"/roles/{role.Id}");
+    }
+}
