@@ -1,4 +1,6 @@
 @page "/applications"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
 
 <PageTitle>Applications - Andy RBAC</PageTitle>
 
@@ -21,6 +23,13 @@
         </div>
     </div>
 </div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
 
 <div class="table-container">
     @if (_loading)
@@ -58,7 +67,7 @@
                         <td>@app.Name</td>
                         <td>@app.ResourceTypeCount</td>
                         <td>@app.RoleCount</td>
-                        <td class="text-muted">@app.CreatedAt.ToString("d")</td>
+                        <td class="text-muted">@app.CreatedAt.ToLocalTime().ToString("d")</td>
                         <td>
                             <button class="btn btn-secondary btn-sm" @onclick="() => ViewApplication(app)">View</button>
                             <button class="btn btn-danger btn-sm" @onclick="() => DeleteApplication(app)">Delete</button>
@@ -81,21 +90,23 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label class="form-label required">Code</label>
-                    <input type="text" class="form-control" @bind="_newApp.Code" placeholder="my-app" />
+                    <input type="text" class="form-control" @bind="_newAppCode" placeholder="my-app" />
                     <p class="form-text">Unique identifier for the application (lowercase, hyphens allowed)</p>
                 </div>
                 <div class="form-group">
                     <label class="form-label required">Name</label>
-                    <input type="text" class="form-control" @bind="_newApp.Name" placeholder="My Application" />
+                    <input type="text" class="form-control" @bind="_newAppName" placeholder="My Application" />
                 </div>
                 <div class="form-group">
                     <label class="form-label">Description</label>
-                    <textarea class="form-control" @bind="_newApp.Description" rows="3" placeholder="Optional description"></textarea>
+                    <textarea class="form-control" @bind="_newAppDescription" rows="3" placeholder="Optional description"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
-                <button class="btn btn-primary" @onclick="CreateApplication">Create</button>
+                <button class="btn btn-primary" @onclick="CreateApplication" disabled="@_saving">
+                    @(_saving ? "Creating..." : "Create")
+                </button>
             </div>
         </div>
     </div>
@@ -103,10 +114,15 @@
 
 @code {
     private bool _loading = true;
+    private bool _saving = false;
     private string _searchTerm = "";
+    private string? _error;
     private List<ApplicationDto> _applications = new();
     private bool _showCreateModal = false;
-    private CreateApplicationModel _newApp = new();
+
+    private string _newAppCode = "";
+    private string _newAppName = "";
+    private string? _newAppDescription;
 
     private List<ApplicationDto> FilteredApplications => string.IsNullOrWhiteSpace(_searchTerm)
         ? _applications
@@ -122,26 +138,27 @@
     private async Task LoadApplications()
     {
         _loading = true;
+        _error = null;
         try
         {
-            // TODO: Load from API
-            _applications = new List<ApplicationDto>
-            {
-                new() { Id = Guid.NewGuid(), Code = "andy-docs", Name = "Andy Docs", ResourceTypeCount = 3, RoleCount = 4, CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) },
-                new() { Id = Guid.NewGuid(), Code = "andy-auth", Name = "Andy Auth", ResourceTypeCount = 2, RoleCount = 3, CreatedAt = DateTimeOffset.UtcNow.AddDays(-60) },
-                new() { Id = Guid.NewGuid(), Code = "andy-portal", Name = "Andy Portal", ResourceTypeCount = 5, RoleCount = 6, CreatedAt = DateTimeOffset.UtcNow.AddDays(-15) },
-            };
+            _applications = await ApiService.GetApplicationsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load applications: {ex.Message}";
+            _applications = new();
         }
         finally
         {
             _loading = false;
         }
-        await Task.CompletedTask;
     }
 
     private void ShowCreateModal()
     {
-        _newApp = new CreateApplicationModel();
+        _newAppCode = "";
+        _newAppName = "";
+        _newAppDescription = null;
         _showCreateModal = true;
     }
 
@@ -152,18 +169,26 @@
 
     private async Task CreateApplication()
     {
-        // TODO: Call API
-        _applications.Add(new ApplicationDto
+        if (string.IsNullOrWhiteSpace(_newAppCode) || string.IsNullOrWhiteSpace(_newAppName))
+            return;
+
+        _saving = true;
+        _error = null;
+        try
         {
-            Id = Guid.NewGuid(),
-            Code = _newApp.Code,
-            Name = _newApp.Name,
-            ResourceTypeCount = 0,
-            RoleCount = 0,
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-        CloseModal();
-        await Task.CompletedTask;
+            var request = new CreateApplicationRequest(_newAppCode, _newAppName, _newAppDescription);
+            await ApiService.CreateApplicationAsync(request);
+            CloseModal();
+            await LoadApplications();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create application: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
     private void ViewApplication(ApplicationDto app)
@@ -173,25 +198,15 @@
 
     private async Task DeleteApplication(ApplicationDto app)
     {
-        // TODO: Confirm and delete
-        _applications.Remove(app);
-        await Task.CompletedTask;
-    }
-
-    private class ApplicationDto
-    {
-        public Guid Id { get; set; }
-        public string Code { get; set; } = "";
-        public string Name { get; set; } = "";
-        public int ResourceTypeCount { get; set; }
-        public int RoleCount { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
-    }
-
-    private class CreateApplicationModel
-    {
-        public string Code { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
+        _error = null;
+        try
+        {
+            await ApiService.DeleteApplicationAsync(app.Id);
+            await LoadApplications();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to delete application: {ex.Message}";
+        }
     }
 }

@@ -1,4 +1,6 @@
 @page "/subjects"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
 
 <PageTitle>Subjects - Andy RBAC</PageTitle>
 
@@ -17,10 +19,18 @@
 <div class="card mb-3">
     <div class="d-flex align-center gap-2">
         <div class="search-box" style="flex: 1;">
-            <input type="text" class="form-control" placeholder="Search subjects..." @bind="_searchTerm" @bind:event="oninput" />
+            <input type="text" class="form-control" placeholder="Search subjects..." @bind="_searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
         </div>
+        <button class="btn btn-secondary" @onclick="Search">Search</button>
     </div>
 </div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
 
 <div class="table-container">
     @if (_loading)
@@ -29,7 +39,7 @@
             <div class="spinner"></div>
         </div>
     }
-    else if (FilteredSubjects.Count == 0)
+    else if (_subjects.Count == 0)
     {
         <div class="empty-state">
             <div class="empty-state-title">No subjects found</div>
@@ -44,33 +54,40 @@
                 <tr>
                     <th>External ID</th>
                     <th>Display Name</th>
-                    <th>Type</th>
-                    <th>Roles</th>
-                    <th>Teams</th>
+                    <th>Provider</th>
+                    <th>Status</th>
                     <th>Created</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var subject in FilteredSubjects)
+                @foreach (var subject in _subjects)
                 {
                     <tr>
                         <td><code>@subject.ExternalId</code></td>
-                        <td>@subject.DisplayName</td>
+                        <td>@(subject.DisplayName ?? subject.Email ?? "-")</td>
+                        <td><code>@subject.Provider</code></td>
                         <td>
-                            <span class="badge @GetTypeBadgeClass(subject.Type)">@subject.Type</span>
+                            <span class="badge @(subject.IsActive ? "badge-success" : "badge-danger")">
+                                @(subject.IsActive ? "Active" : "Inactive")
+                            </span>
                         </td>
-                        <td>@subject.RoleCount</td>
-                        <td>@subject.TeamCount</td>
-                        <td class="text-muted">@subject.CreatedAt.ToString("d")</td>
+                        <td class="text-muted">@subject.CreatedAt.ToLocalTime().ToString("d")</td>
                         <td>
-                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewSubject(subject)">View</button>
-                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteSubject(subject)">Delete</button>
+                            <button class="btn btn-secondary btn-sm">View</button>
+                            @if (subject.IsActive)
+                            {
+                                <button class="btn btn-danger btn-sm" @onclick="() => DeactivateSubject(subject)">Deactivate</button>
+                            }
                         </td>
                     </tr>
                 }
             </tbody>
         </table>
+
+        <div class="d-flex justify-between align-center mt-3">
+            <span class="text-muted">Showing @_subjects.Count of @_total subjects</span>
+        </div>
     }
 </div>
 
@@ -85,25 +102,27 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label class="form-label required">External ID</label>
-                    <input type="text" class="form-control" @bind="_newSubject.ExternalId" placeholder="user@example.com or user-id-123" />
+                    <input type="text" class="form-control" @bind="_newExternalId" placeholder="user@example.com or user-id-123" />
                     <p class="form-text">Unique identifier from your identity provider</p>
                 </div>
                 <div class="form-group">
-                    <label class="form-label required">Display Name</label>
-                    <input type="text" class="form-control" @bind="_newSubject.DisplayName" placeholder="John Doe" />
+                    <label class="form-label required">Provider</label>
+                    <input type="text" class="form-control" @bind="_newProvider" placeholder="andy-auth" />
                 </div>
                 <div class="form-group">
-                    <label class="form-label required">Type</label>
-                    <select class="form-control" @bind="_newSubject.Type">
-                        <option value="user">User</option>
-                        <option value="service">Service Account</option>
-                        <option value="api-key">API Key</option>
-                    </select>
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-control" @bind="_newEmail" placeholder="user@example.com" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Display Name</label>
+                    <input type="text" class="form-control" @bind="_newDisplayName" placeholder="John Doe" />
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
-                <button class="btn btn-primary" @onclick="CreateSubject">Create</button>
+                <button class="btn btn-primary" @onclick="CreateSubject" disabled="@_saving">
+                    @(_saving ? "Creating..." : "Create")
+                </button>
             </div>
         </div>
     </div>
@@ -111,16 +130,17 @@
 
 @code {
     private bool _loading = true;
+    private bool _saving = false;
     private string _searchTerm = "";
+    private string? _error;
     private List<SubjectDto> _subjects = new();
+    private long _total = 0;
     private bool _showCreateModal = false;
-    private CreateSubjectModel _newSubject = new();
 
-    private List<SubjectDto> FilteredSubjects => string.IsNullOrWhiteSpace(_searchTerm)
-        ? _subjects
-        : _subjects.Where(s =>
-            s.ExternalId.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
-            s.DisplayName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+    private string _newExternalId = "";
+    private string _newProvider = "andy-auth";
+    private string? _newEmail;
+    private string? _newDisplayName;
 
     protected override async Task OnInitializedAsync()
     {
@@ -130,36 +150,42 @@
     private async Task LoadSubjects()
     {
         _loading = true;
+        _error = null;
         try
         {
-            // TODO: Load from API
-            _subjects = new List<SubjectDto>
-            {
-                new() { Id = Guid.NewGuid(), ExternalId = "john.doe@example.com", DisplayName = "John Doe", Type = "user", RoleCount = 3, TeamCount = 2, CreatedAt = DateTimeOffset.UtcNow.AddDays(-90) },
-                new() { Id = Guid.NewGuid(), ExternalId = "jane.smith@example.com", DisplayName = "Jane Smith", Type = "user", RoleCount = 2, TeamCount = 1, CreatedAt = DateTimeOffset.UtcNow.AddDays(-60) },
-                new() { Id = Guid.NewGuid(), ExternalId = "bob.wilson@example.com", DisplayName = "Bob Wilson", Type = "user", RoleCount = 1, TeamCount = 1, CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) },
-                new() { Id = Guid.NewGuid(), ExternalId = "svc-backup", DisplayName = "Backup Service", Type = "service", RoleCount = 1, TeamCount = 0, CreatedAt = DateTimeOffset.UtcNow.AddDays(-120) },
-                new() { Id = Guid.NewGuid(), ExternalId = "api-integration-01", DisplayName = "Integration API Key", Type = "api-key", RoleCount = 2, TeamCount = 0, CreatedAt = DateTimeOffset.UtcNow.AddDays(-45) },
-            };
+            var query = string.IsNullOrWhiteSpace(_searchTerm) ? null : _searchTerm;
+            var result = await ApiService.GetSubjectsAsync(query);
+            _subjects = result.Items;
+            _total = result.Total;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load subjects: {ex.Message}";
+            _subjects = new();
         }
         finally
         {
             _loading = false;
         }
-        await Task.CompletedTask;
     }
 
-    private string GetTypeBadgeClass(string type) => type switch
+    private async Task Search()
     {
-        "user" => "badge-success",
-        "service" => "badge-info",
-        "api-key" => "badge-warning",
-        _ => "badge-secondary"
-    };
+        await LoadSubjects();
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Search();
+    }
 
     private void ShowCreateModal()
     {
-        _newSubject = new CreateSubjectModel { Type = "user" };
+        _newExternalId = "";
+        _newProvider = "andy-auth";
+        _newEmail = null;
+        _newDisplayName = null;
         _showCreateModal = true;
     }
 
@@ -170,48 +196,39 @@
 
     private async Task CreateSubject()
     {
-        // TODO: Call API
-        _subjects.Add(new SubjectDto
+        if (string.IsNullOrWhiteSpace(_newExternalId) || string.IsNullOrWhiteSpace(_newProvider))
+            return;
+
+        _saving = true;
+        _error = null;
+        try
         {
-            Id = Guid.NewGuid(),
-            ExternalId = _newSubject.ExternalId,
-            DisplayName = _newSubject.DisplayName,
-            Type = _newSubject.Type,
-            RoleCount = 0,
-            TeamCount = 0,
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-        CloseModal();
-        await Task.CompletedTask;
+            var request = new CreateSubjectRequest(_newExternalId, _newProvider, "user", _newEmail, _newDisplayName);
+            await ApiService.CreateSubjectAsync(request);
+            CloseModal();
+            await LoadSubjects();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create subject: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
-    private void ViewSubject(SubjectDto subject)
+    private async Task DeactivateSubject(SubjectDto subject)
     {
-        // TODO: Navigate to detail page
-    }
-
-    private async Task DeleteSubject(SubjectDto subject)
-    {
-        // TODO: Confirm and delete
-        _subjects.Remove(subject);
-        await Task.CompletedTask;
-    }
-
-    private class SubjectDto
-    {
-        public Guid Id { get; set; }
-        public string ExternalId { get; set; } = "";
-        public string DisplayName { get; set; } = "";
-        public string Type { get; set; } = "";
-        public int RoleCount { get; set; }
-        public int TeamCount { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
-    }
-
-    private class CreateSubjectModel
-    {
-        public string ExternalId { get; set; } = "";
-        public string DisplayName { get; set; } = "";
-        public string Type { get; set; } = "user";
+        _error = null;
+        try
+        {
+            await ApiService.DeleteSubjectAsync(subject.Id);
+            await LoadSubjects();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to deactivate subject: {ex.Message}";
+        }
     }
 }

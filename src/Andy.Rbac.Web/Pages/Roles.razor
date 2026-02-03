@@ -1,4 +1,6 @@
 @page "/roles"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
 
 <PageTitle>Roles - Andy RBAC</PageTitle>
 
@@ -19,7 +21,7 @@
         <div class="search-box" style="flex: 1;">
             <input type="text" class="form-control" placeholder="Search roles..." @bind="_searchTerm" @bind:event="oninput" />
         </div>
-        <select class="form-control" style="width: 200px;" @bind="_applicationFilter">
+        <select class="form-control" style="width: 200px;" @bind="_applicationFilter" @bind:after="LoadRoles">
             <option value="">All Applications</option>
             @foreach (var app in _applications)
             {
@@ -28,6 +30,13 @@
         </select>
     </div>
 </div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
 
 <div class="table-container">
     @if (_loading)
@@ -50,10 +59,9 @@
             <thead>
                 <tr>
                     <th>Name</th>
+                    <th>Code</th>
                     <th>Application</th>
-                    <th>Permissions</th>
-                    <th>Subjects</th>
-                    <th>Created</th>
+                    <th>System</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -68,13 +76,20 @@
                                 <br /><span class="text-muted text-sm">@role.Description</span>
                             }
                         </td>
-                        <td><code>@role.ApplicationCode</code></td>
-                        <td>@role.PermissionCount</td>
-                        <td>@role.SubjectCount</td>
-                        <td class="text-muted">@role.CreatedAt.ToString("d")</td>
+                        <td><code>@role.Code</code></td>
+                        <td><code>@(role.ApplicationCode ?? "global")</code></td>
                         <td>
-                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewRole(role)">View</button>
-                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteRole(role)">Delete</button>
+                            @if (role.IsSystem)
+                            {
+                                <span class="badge badge-info">System</span>
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm">View</button>
+                            @if (!role.IsSystem)
+                            {
+                                <button class="btn btn-danger btn-sm" @onclick="() => DeleteRole(role)">Delete</button>
+                            }
                         </td>
                     </tr>
                 }
@@ -93,9 +108,9 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label required">Application</label>
-                    <select class="form-control" @bind="_newRole.ApplicationCode">
-                        <option value="">Select application...</option>
+                    <label class="form-label">Application</label>
+                    <select class="form-control" @bind="_newRoleAppCode">
+                        <option value="">Global (no application)</option>
                         @foreach (var app in _applications)
                         {
                             <option value="@app.Code">@app.Name</option>
@@ -103,17 +118,23 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label class="form-label required">Code</label>
+                    <input type="text" class="form-control" @bind="_newRoleCode" placeholder="admin" />
+                </div>
+                <div class="form-group">
                     <label class="form-label required">Name</label>
-                    <input type="text" class="form-control" @bind="_newRole.Name" placeholder="Admin" />
+                    <input type="text" class="form-control" @bind="_newRoleName" placeholder="Administrator" />
                 </div>
                 <div class="form-group">
                     <label class="form-label">Description</label>
-                    <textarea class="form-control" @bind="_newRole.Description" rows="3" placeholder="Optional description"></textarea>
+                    <textarea class="form-control" @bind="_newRoleDescription" rows="3" placeholder="Optional description"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
-                <button class="btn btn-primary" @onclick="CreateRole">Create</button>
+                <button class="btn btn-primary" @onclick="CreateRole" disabled="@_saving">
+                    @(_saving ? "Creating..." : "Create")
+                </button>
             </div>
         </div>
     </div>
@@ -121,68 +142,58 @@
 
 @code {
     private bool _loading = true;
+    private bool _saving = false;
     private string _searchTerm = "";
     private string _applicationFilter = "";
+    private string? _error;
     private List<RoleDto> _roles = new();
     private List<ApplicationDto> _applications = new();
     private bool _showCreateModal = false;
-    private CreateRoleModel _newRole = new();
 
-    private List<RoleDto> FilteredRoles
-    {
-        get
-        {
-            var filtered = _roles.AsEnumerable();
+    private string _newRoleCode = "";
+    private string _newRoleName = "";
+    private string? _newRoleDescription;
+    private string? _newRoleAppCode;
 
-            if (!string.IsNullOrWhiteSpace(_applicationFilter))
-                filtered = filtered.Where(r => r.ApplicationCode == _applicationFilter);
-
-            if (!string.IsNullOrWhiteSpace(_searchTerm))
-                filtered = filtered.Where(r =>
-                    r.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                    (r.Description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
-
-            return filtered.ToList();
-        }
-    }
+    private List<RoleDto> FilteredRoles => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _roles
+        : _roles.Where(r =>
+            r.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            r.Code.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            (r.Description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        _applications = await ApiService.GetApplicationsAsync();
+        await LoadRoles();
     }
 
-    private async Task LoadData()
+    private async Task LoadRoles()
     {
         _loading = true;
+        _error = null;
         try
         {
-            // TODO: Load from API
-            _applications = new List<ApplicationDto>
-            {
-                new() { Code = "andy-docs", Name = "Andy Docs" },
-                new() { Code = "andy-auth", Name = "Andy Auth" },
-                new() { Code = "andy-portal", Name = "Andy Portal" },
-            };
-
-            _roles = new List<RoleDto>
-            {
-                new() { Id = Guid.NewGuid(), Name = "Admin", Description = "Full administrative access", ApplicationCode = "andy-docs", PermissionCount = 12, SubjectCount = 3, CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) },
-                new() { Id = Guid.NewGuid(), Name = "Editor", Description = "Can create and edit content", ApplicationCode = "andy-docs", PermissionCount = 8, SubjectCount = 10, CreatedAt = DateTimeOffset.UtcNow.AddDays(-25) },
-                new() { Id = Guid.NewGuid(), Name = "Viewer", Description = "Read-only access", ApplicationCode = "andy-docs", PermissionCount = 3, SubjectCount = 25, CreatedAt = DateTimeOffset.UtcNow.AddDays(-20) },
-                new() { Id = Guid.NewGuid(), Name = "Admin", Description = "System administrator", ApplicationCode = "andy-auth", PermissionCount = 15, SubjectCount = 2, CreatedAt = DateTimeOffset.UtcNow.AddDays(-60) },
-                new() { Id = Guid.NewGuid(), Name = "User Manager", Description = "Can manage users", ApplicationCode = "andy-auth", PermissionCount = 6, SubjectCount = 5, CreatedAt = DateTimeOffset.UtcNow.AddDays(-45) },
-            };
+            var appCode = string.IsNullOrEmpty(_applicationFilter) ? null : _applicationFilter;
+            _roles = await ApiService.GetRolesAsync(appCode);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load roles: {ex.Message}";
+            _roles = new();
         }
         finally
         {
             _loading = false;
         }
-        await Task.CompletedTask;
     }
 
     private void ShowCreateModal()
     {
-        _newRole = new CreateRoleModel();
+        _newRoleCode = "";
+        _newRoleName = "";
+        _newRoleDescription = null;
+        _newRoleAppCode = null;
         _showCreateModal = true;
     }
 
@@ -193,54 +204,39 @@
 
     private async Task CreateRole()
     {
-        // TODO: Call API
-        _roles.Add(new RoleDto
-        {
-            Id = Guid.NewGuid(),
-            Name = _newRole.Name,
-            Description = _newRole.Description,
-            ApplicationCode = _newRole.ApplicationCode,
-            PermissionCount = 0,
-            SubjectCount = 0,
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-        CloseModal();
-        await Task.CompletedTask;
-    }
+        if (string.IsNullOrWhiteSpace(_newRoleCode) || string.IsNullOrWhiteSpace(_newRoleName))
+            return;
 
-    private void ViewRole(RoleDto role)
-    {
-        // TODO: Navigate to detail page
+        _saving = true;
+        _error = null;
+        try
+        {
+            var request = new CreateRoleRequest(_newRoleCode, _newRoleName, _newRoleDescription, _newRoleAppCode, null);
+            await ApiService.CreateRoleAsync(request);
+            CloseModal();
+            await LoadRoles();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create role: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
     private async Task DeleteRole(RoleDto role)
     {
-        // TODO: Confirm and delete
-        _roles.Remove(role);
-        await Task.CompletedTask;
-    }
-
-    private class RoleDto
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
-        public string ApplicationCode { get; set; } = "";
-        public int PermissionCount { get; set; }
-        public int SubjectCount { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
-    }
-
-    private class ApplicationDto
-    {
-        public string Code { get; set; } = "";
-        public string Name { get; set; } = "";
-    }
-
-    private class CreateRoleModel
-    {
-        public string ApplicationCode { get; set; } = "";
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
+        _error = null;
+        try
+        {
+            await ApiService.DeleteRoleAsync(role.Id);
+            await LoadRoles();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to delete role: {ex.Message}";
+        }
     }
 }

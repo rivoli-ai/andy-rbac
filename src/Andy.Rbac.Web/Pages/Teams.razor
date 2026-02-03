@@ -1,4 +1,6 @@
 @page "/teams"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
 
 <PageTitle>Teams - Andy RBAC</PageTitle>
 
@@ -22,6 +24,13 @@
     </div>
 </div>
 
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
+
 <div class="table-container">
     @if (_loading)
     {
@@ -43,9 +52,9 @@
             <thead>
                 <tr>
                     <th>Name</th>
-                    <th>Description</th>
+                    <th>Code</th>
                     <th>Members</th>
-                    <th>Roles</th>
+                    <th>Status</th>
                     <th>Created</th>
                     <th>Actions</th>
                 </tr>
@@ -54,15 +63,25 @@
                 @foreach (var team in FilteredTeams)
                 {
                     <tr>
-                        <td><strong>@team.Name</strong></td>
-                        <td class="text-muted">@(team.Description ?? "-")</td>
+                        <td>
+                            <strong>@team.Name</strong>
+                            @if (!string.IsNullOrEmpty(team.Description))
+                            {
+                                <br /><span class="text-muted text-sm">@team.Description</span>
+                            }
+                        </td>
+                        <td><code>@team.Code</code></td>
                         <td>
                             <span class="badge badge-info">@team.MemberCount members</span>
                         </td>
-                        <td>@team.RoleCount</td>
-                        <td class="text-muted">@team.CreatedAt.ToString("d")</td>
                         <td>
-                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewTeam(team)">View</button>
+                            <span class="badge @(team.IsActive ? "badge-success" : "badge-danger")">
+                                @(team.IsActive ? "Active" : "Inactive")
+                            </span>
+                        </td>
+                        <td class="text-muted">@team.CreatedAt.ToLocalTime().ToString("d")</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm">View</button>
                             <button class="btn btn-danger btn-sm" @onclick="() => DeleteTeam(team)">Delete</button>
                         </td>
                     </tr>
@@ -82,17 +101,23 @@
             </div>
             <div class="modal-body">
                 <div class="form-group">
+                    <label class="form-label required">Code</label>
+                    <input type="text" class="form-control" @bind="_newTeamCode" placeholder="engineering" />
+                </div>
+                <div class="form-group">
                     <label class="form-label required">Name</label>
-                    <input type="text" class="form-control" @bind="_newTeam.Name" placeholder="Engineering" />
+                    <input type="text" class="form-control" @bind="_newTeamName" placeholder="Engineering Team" />
                 </div>
                 <div class="form-group">
                     <label class="form-label">Description</label>
-                    <textarea class="form-control" @bind="_newTeam.Description" rows="3" placeholder="Optional description"></textarea>
+                    <textarea class="form-control" @bind="_newTeamDescription" rows="3" placeholder="Optional description"></textarea>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
-                <button class="btn btn-primary" @onclick="CreateTeam">Create</button>
+                <button class="btn btn-primary" @onclick="CreateTeam" disabled="@_saving">
+                    @(_saving ? "Creating..." : "Create")
+                </button>
             </div>
         </div>
     </div>
@@ -100,15 +125,21 @@
 
 @code {
     private bool _loading = true;
+    private bool _saving = false;
     private string _searchTerm = "";
+    private string? _error;
     private List<TeamDto> _teams = new();
     private bool _showCreateModal = false;
-    private CreateTeamModel _newTeam = new();
+
+    private string _newTeamCode = "";
+    private string _newTeamName = "";
+    private string? _newTeamDescription;
 
     private List<TeamDto> FilteredTeams => string.IsNullOrWhiteSpace(_searchTerm)
         ? _teams
         : _teams.Where(t =>
             t.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            t.Code.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
             (t.Description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
 
     protected override async Task OnInitializedAsync()
@@ -119,28 +150,27 @@
     private async Task LoadTeams()
     {
         _loading = true;
+        _error = null;
         try
         {
-            // TODO: Load from API
-            _teams = new List<TeamDto>
-            {
-                new() { Id = Guid.NewGuid(), Name = "Engineering", Description = "Software engineering team", MemberCount = 12, RoleCount = 4, CreatedAt = DateTimeOffset.UtcNow.AddDays(-180) },
-                new() { Id = Guid.NewGuid(), Name = "Product", Description = "Product management team", MemberCount = 5, RoleCount = 3, CreatedAt = DateTimeOffset.UtcNow.AddDays(-150) },
-                new() { Id = Guid.NewGuid(), Name = "Design", Description = "UX and design team", MemberCount = 4, RoleCount = 2, CreatedAt = DateTimeOffset.UtcNow.AddDays(-120) },
-                new() { Id = Guid.NewGuid(), Name = "Operations", Description = "DevOps and infrastructure", MemberCount = 3, RoleCount = 5, CreatedAt = DateTimeOffset.UtcNow.AddDays(-90) },
-                new() { Id = Guid.NewGuid(), Name = "Leadership", Description = "Executive team", MemberCount = 4, RoleCount = 6, CreatedAt = DateTimeOffset.UtcNow.AddDays(-200) },
-            };
+            _teams = await ApiService.GetTeamsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load teams: {ex.Message}";
+            _teams = new();
         }
         finally
         {
             _loading = false;
         }
-        await Task.CompletedTask;
     }
 
     private void ShowCreateModal()
     {
-        _newTeam = new CreateTeamModel();
+        _newTeamCode = "";
+        _newTeamName = "";
+        _newTeamDescription = null;
         _showCreateModal = true;
     }
 
@@ -151,45 +181,39 @@
 
     private async Task CreateTeam()
     {
-        // TODO: Call API
-        _teams.Add(new TeamDto
-        {
-            Id = Guid.NewGuid(),
-            Name = _newTeam.Name,
-            Description = _newTeam.Description,
-            MemberCount = 0,
-            RoleCount = 0,
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-        CloseModal();
-        await Task.CompletedTask;
-    }
+        if (string.IsNullOrWhiteSpace(_newTeamCode) || string.IsNullOrWhiteSpace(_newTeamName))
+            return;
 
-    private void ViewTeam(TeamDto team)
-    {
-        // TODO: Navigate to detail page
+        _saving = true;
+        _error = null;
+        try
+        {
+            var request = new CreateTeamRequest(_newTeamCode, _newTeamName, _newTeamDescription, null, null);
+            await ApiService.CreateTeamAsync(request);
+            CloseModal();
+            await LoadTeams();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to create team: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 
     private async Task DeleteTeam(TeamDto team)
     {
-        // TODO: Confirm and delete
-        _teams.Remove(team);
-        await Task.CompletedTask;
-    }
-
-    private class TeamDto
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
-        public int MemberCount { get; set; }
-        public int RoleCount { get; set; }
-        public DateTimeOffset CreatedAt { get; set; }
-    }
-
-    private class CreateTeamModel
-    {
-        public string Name { get; set; } = "";
-        public string? Description { get; set; }
+        _error = null;
+        try
+        {
+            await ApiService.DeleteTeamAsync(team.Id);
+            await LoadTeams();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to delete team: {ex.Message}";
+        }
     }
 }

@@ -1,5 +1,6 @@
 @page "/"
-@inject HttpClient Http
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
 
 <PageTitle>Dashboard - Andy RBAC</PageTitle>
 
@@ -8,92 +9,68 @@
     <p class="subtitle">Overview of your RBAC system</p>
 </div>
 
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-icon primary">A</div>
-        <div class="stat-content">
-            <div class="stat-label">Applications</div>
-            <div class="stat-value">@_stats.Applications</div>
-            <a href="applications" class="stat-link">Manage applications</a>
-        </div>
+@if (_loading)
+{
+    <div class="loading">
+        <div class="spinner"></div>
     </div>
-
-    <div class="stat-card">
-        <div class="stat-icon info">R</div>
-        <div class="stat-content">
-            <div class="stat-label">Roles</div>
-            <div class="stat-value">@_stats.Roles</div>
-            <a href="roles" class="stat-link">Manage roles</a>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon success">S</div>
-        <div class="stat-content">
-            <div class="stat-label">Subjects</div>
-            <div class="stat-value">@_stats.Subjects</div>
-            <a href="subjects" class="stat-link">Manage subjects</a>
-        </div>
-    </div>
-
-    <div class="stat-card">
-        <div class="stat-icon warning">T</div>
-        <div class="stat-content">
-            <div class="stat-label">Teams</div>
-            <div class="stat-value">@_stats.Teams</div>
-            <a href="teams" class="stat-link">Manage teams</a>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Recent Activity</h3>
-        <a href="audit" class="btn btn-secondary btn-sm">View all</a>
-    </div>
-    <div class="card-body">
-        @if (_recentActivity.Count == 0)
-        {
-            <div class="empty-state">
-                <p class="text-muted">No recent activity</p>
+}
+else
+{
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon primary">A</div>
+            <div class="stat-content">
+                <div class="stat-label">Applications</div>
+                <div class="stat-value">@_stats.Applications</div>
+                <a href="applications" class="stat-link">Manage applications</a>
             </div>
-        }
-        else
-        {
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Event</th>
-                        <th>Subject</th>
-                        <th>Resource</th>
-                        <th>Result</th>
-                        <th>Time</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var activity in _recentActivity)
-                    {
-                        <tr>
-                            <td>@activity.EventType</td>
-                            <td>@(activity.SubjectId?.ToString() ?? "-")</td>
-                            <td>@(activity.ResourceType ?? "-")</td>
-                            <td>
-                                <span class="badge @(activity.Result == "allowed" ? "badge-success" : "badge-danger")">
-                                    @activity.Result
-                                </span>
-                            </td>
-                            <td class="text-muted">@activity.Timestamp.ToString("g")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon info">R</div>
+            <div class="stat-content">
+                <div class="stat-label">Roles</div>
+                <div class="stat-value">@_stats.Roles</div>
+                <a href="roles" class="stat-link">Manage roles</a>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon success">S</div>
+            <div class="stat-content">
+                <div class="stat-label">Subjects</div>
+                <div class="stat-value">@_stats.Subjects</div>
+                <a href="subjects" class="stat-link">Manage subjects</a>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon warning">T</div>
+            <div class="stat-content">
+                <div class="stat-label">Teams</div>
+                <div class="stat-value">@_stats.Teams</div>
+                <a href="teams" class="stat-link">Manage teams</a>
+            </div>
+        </div>
     </div>
-</div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Quick Actions</h3>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="applications" class="btn btn-primary">+ New Application</a>
+            <a href="roles" class="btn btn-secondary">+ New Role</a>
+            <a href="subjects" class="btn btn-secondary">+ New Subject</a>
+            <a href="teams" class="btn btn-secondary">+ New Team</a>
+        </div>
+    </div>
+}
 
 @code {
+    private bool _loading = true;
     private DashboardStats _stats = new();
-    private List<AuditLogEntry> _recentActivity = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -102,46 +79,18 @@
 
     private async Task LoadDashboardData()
     {
+        _loading = true;
         try
         {
-            // TODO: Load from API
-            _stats = new DashboardStats
-            {
-                Applications = 3,
-                Roles = 12,
-                Subjects = 45,
-                Teams = 8
-            };
-
-            _recentActivity = new List<AuditLogEntry>
-            {
-                new() { EventType = "PermissionCheck", SubjectId = Guid.NewGuid(), ResourceType = "document", Result = "allowed", Timestamp = DateTimeOffset.UtcNow.AddMinutes(-5) },
-                new() { EventType = "RoleAssigned", SubjectId = Guid.NewGuid(), ResourceType = "role", Result = "allowed", Timestamp = DateTimeOffset.UtcNow.AddMinutes(-15) },
-                new() { EventType = "PermissionCheck", SubjectId = Guid.NewGuid(), ResourceType = "document", Result = "denied", Timestamp = DateTimeOffset.UtcNow.AddMinutes(-30) },
-            };
+            _stats = await ApiService.GetDashboardStatsAsync();
         }
         catch
         {
-            // Handle error
+            _stats = new DashboardStats();
         }
-
-        await Task.CompletedTask;
-    }
-
-    private class DashboardStats
-    {
-        public int Applications { get; set; }
-        public int Roles { get; set; }
-        public int Subjects { get; set; }
-        public int Teams { get; set; }
-    }
-
-    private class AuditLogEntry
-    {
-        public string EventType { get; set; } = "";
-        public Guid? SubjectId { get; set; }
-        public string? ResourceType { get; set; }
-        public string Result { get; set; } = "";
-        public DateTimeOffset Timestamp { get; set; }
+        finally
+        {
+            _loading = false;
+        }
     }
 }

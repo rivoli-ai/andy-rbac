@@ -1,4 +1,5 @@
 using Andy.Rbac.Client;
+using Andy.Rbac.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -12,6 +13,18 @@ builder.Services.AddServerSideBlazor();
 
 // Add RBAC client
 builder.Services.AddRbacClient(builder.Configuration);
+
+// Add RBAC API service for admin UI
+var apiBaseUrl = builder.Configuration["Rbac:ApiBaseUrl"] ?? "https://localhost:7003";
+builder.Services.AddHttpClient<RbacApiService>(client =>
+{
+    client.BaseAddress = new Uri(apiBaseUrl);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    // Allow self-signed certs in development
+    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+});
 
 // Configure authentication with OpenID Connect (same pattern as Andy-Docs)
 var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"] ?? "https://localhost:5001";

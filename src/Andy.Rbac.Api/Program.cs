@@ -3,7 +3,9 @@ using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Infrastructure.Repositories;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol.AspNetCore.Authentication;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -50,6 +52,17 @@ builder.Services
 
 builder.Services.AddScoped<RbacMcpTools>();
 
+// Add HttpClient for DCR proxy
+builder.Services.AddHttpClient();
+
+// Configure MCP server URL - must be the actual public URL for the deployment
+var serverUrl = builder.Configuration["Mcp:ServerUrl"] ?? "https://localhost:7003";
+var mcpPath = builder.Configuration["Mcp:McpPath"] ?? "/mcp";
+var protectedResourceUrl = $"{serverUrl}{mcpPath}";
+
+// Configure Andy.Auth authority
+var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"] ?? builder.Configuration["Auth:Authority"] ?? "https://localhost:5001";
+
 // Add authentication (integrate with andy-auth)
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
@@ -57,7 +70,53 @@ builder.Services.AddAuthentication("Bearer")
         options.Authority = builder.Configuration["Auth:Authority"];
         options.Audience = builder.Configuration["Auth:Audience"];
         options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+    })
+    .AddMcp(options =>
+    {
+        // Configure OAuth Protected Resource Metadata (RFC 8707)
+        options.ResourceMetadataUri = new Uri($"{serverUrl}/mcp/.well-known/oauth-protected-resource");
+        options.ResourceMetadata = new()
+        {
+            Resource = new Uri(protectedResourceUrl),
+            ResourceDocumentation = new Uri("https://github.com/rivoli-ai/andy-rbac"),
+            // Point to Andy.Auth as the authorization server
+            AuthorizationServers = { new Uri(andyAuthAuthority) },
+            ScopesSupported = ["openid", "profile", "email"],
+        };
+
+        // Log when metadata is served
+        options.Events.OnResourceMetadataRequest = context =>
+        {
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            var meta = context.ResourceMetadata;
+            logger.LogInformation("MCP ResourceMetadata requested. Resource={Resource} AuthServers={AuthServers}",
+                meta?.Resource, meta is null ? "<null>" : string.Join(",", meta.AuthorizationServers.Select(a => a.ToString())));
+            return Task.CompletedTask;
+        };
     });
+
+// Post-configure JWT bearer to accept MCP resource URLs as valid audiences
+builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+{
+    var existingAudiences = options.TokenValidationParameters.ValidAudiences?.ToList() ?? new List<string>();
+    if (!string.IsNullOrEmpty(options.TokenValidationParameters.ValidAudience) &&
+        !existingAudiences.Contains(options.TokenValidationParameters.ValidAudience))
+    {
+        existingAudiences.Add(options.TokenValidationParameters.ValidAudience);
+    }
+
+    // Add MCP resource URLs as valid audiences
+    existingAudiences.Add(protectedResourceUrl);
+
+    options.TokenValidationParameters.ValidAudiences = existingAudiences;
+    options.TokenValidationParameters.ValidAudience = null;  // Use ValidAudiences instead
+});
+
+// Override default authentication schemes for MCP challenge
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(options =>
+{
+    options.DefaultChallengeScheme = McpAuthenticationDefaults.AuthenticationScheme;
+});
 
 builder.Services.AddAuthorization();
 
@@ -70,6 +129,14 @@ builder.Services.AddCors(options =>
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
+    });
+
+    // Allow MCP clients (Claude Desktop, Cursor, etc.) to access /mcp endpoints
+    options.AddPolicy("AllowMcpClients", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
 
@@ -90,11 +157,72 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGrpcService<RbacGrpcService>();
 
-// Map MCP endpoint for AI assistants (Claude Desktop, ChatGPT, etc.)
-app.MapMcp("/mcp");
+// Map MCP Server endpoint at /mcp with permissive CORS for MCP clients
+// Require authorization so clients (e.g., Claude Desktop) receive an OAuth challenge
+app.MapMcp("/mcp")
+    .RequireCors("AllowMcpClients")
+    .RequireAuthorization();
+
+// JSON options for OAuth metadata - omit null values per RFC 8707
+var oauthMetadataJsonOptions = new System.Text.Json.JsonSerializerOptions
+{
+    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower
+};
+
+// Serve protected resource metadata under /mcp/.well-known for MCP clients
+app.MapGet("/mcp/.well-known/oauth-protected-resource", (IServiceProvider sp) =>
+{
+    var optionsMonitor = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<McpAuthenticationOptions>>();
+    var options = optionsMonitor.Get(McpAuthenticationDefaults.AuthenticationScheme);
+    return Results.Json(options.ResourceMetadata, oauthMetadataJsonOptions);
+})
+.AllowAnonymous()
+.RequireCors("AllowMcpClients");
+
+// Serve protected resource metadata at the default root path
+app.MapGet("/.well-known/oauth-protected-resource", (IServiceProvider sp) =>
+{
+    var optionsMonitor = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<McpAuthenticationOptions>>();
+    var options = optionsMonitor.Get(McpAuthenticationDefaults.AuthenticationScheme);
+    return Results.Json(options.ResourceMetadata, oauthMetadataJsonOptions);
+})
+.AllowAnonymous()
+.RequireCors("AllowMcpClients");
+
+// OpenID Configuration - redirect to Andy.Auth
+app.MapGet("/.well-known/openid-configuration", () =>
+    Results.Redirect($"{andyAuthAuthority}/.well-known/openid-configuration", permanent: false))
+    .AllowAnonymous()
+    .RequireCors("AllowMcpClients");
+
+app.MapGet("/.well-known/oauth-authorization-server", () =>
+    Results.Redirect($"{andyAuthAuthority}/.well-known/openid-configuration", permanent: false))
+    .AllowAnonymous()
+    .RequireCors("AllowMcpClients");
+
+// Redirect authorization and token endpoints to Andy.Auth
+app.MapGet("/authorize", (HttpContext ctx) =>
+{
+    var qs = ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : string.Empty;
+    return Results.Redirect($"{andyAuthAuthority}/connect/authorize{qs}", permanent: false);
+})
+    .AllowAnonymous()
+    .RequireCors("AllowMcpClients");
+
+app.MapPost("/token", (HttpContext ctx) =>
+{
+    var qs = ctx.Request.QueryString.HasValue ? ctx.Request.QueryString.Value : string.Empty;
+    ctx.Response.StatusCode = StatusCodes.Status307TemporaryRedirect;
+    ctx.Response.Headers.Location = $"{andyAuthAuthority}/connect/token{qs}";
+    return Task.CompletedTask;
+})
+    .AllowAnonymous()
+    .RequireCors("AllowMcpClients");
 
 // Health check
-app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
+app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }))
+    .AllowAnonymous();
 
 // Apply migrations and seed data
 using (var scope = app.Services.CreateScope())
