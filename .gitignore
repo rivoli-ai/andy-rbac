@@ -67,3 +67,5 @@ appsettings.*.json
 *.pfx
 *.key
 *.pem
+appsettings.Development.json
+appsettings.Local.json
