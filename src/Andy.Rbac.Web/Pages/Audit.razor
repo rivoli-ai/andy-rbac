@@ -1,0 +1,234 @@
+@page "/audit"
+
+<PageTitle>Audit Log - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <h1>Audit Log</h1>
+            <p class="subtitle">Track permission checks and access events</p>
+        </div>
+        <button class="btn btn-secondary" @onclick="RefreshLog">
+            Refresh
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="d-flex align-center gap-2 flex-wrap">
+        <div class="search-box" style="flex: 1; min-width: 200px;">
+            <input type="text" class="form-control" placeholder="Search by subject, resource..." @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+        <select class="form-control" style="width: 150px;" @bind="_eventTypeFilter">
+            <option value="">All Events</option>
+            <option value="PermissionCheck">Permission Check</option>
+            <option value="RoleAssigned">Role Assigned</option>
+            <option value="RoleRevoked">Role Revoked</option>
+            <option value="TeamJoined">Team Joined</option>
+            <option value="TeamLeft">Team Left</option>
+        </select>
+        <select class="form-control" style="width: 150px;" @bind="_resultFilter">
+            <option value="">All Results</option>
+            <option value="allowed">Allowed</option>
+            <option value="denied">Denied</option>
+        </select>
+        <select class="form-control" style="width: 150px;" @bind="_timeRangeFilter">
+            <option value="1h">Last Hour</option>
+            <option value="24h">Last 24 Hours</option>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+        </select>
+    </div>
+</div>
+
+<div class="table-container">
+    @if (_loading)
+    {
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    }
+    else if (FilteredLogs.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-title">No audit events found</div>
+            <p class="empty-state-text">Audit events will appear here as they occur.</p>
+        </div>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Event</th>
+                    <th>Subject</th>
+                    <th>Application</th>
+                    <th>Resource</th>
+                    <th>Action</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in FilteredLogs)
+                {
+                    <tr>
+                        <td class="text-muted text-sm">@log.Timestamp.ToString("g")</td>
+                        <td>@log.EventType</td>
+                        <td>
+                            <code class="text-sm">@log.SubjectExternalId</code>
+                        </td>
+                        <td><code>@log.ApplicationCode</code></td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(log.ResourceType))
+                            {
+                                <span>@log.ResourceType</span>
+                                @if (!string.IsNullOrEmpty(log.ResourceId))
+                                {
+                                    <span class="text-muted">/@log.ResourceId</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted">-</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!string.IsNullOrEmpty(log.Action))
+                            {
+                                <code>@log.Action</code>
+                            }
+                            else
+                            {
+                                <span class="text-muted">-</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge @GetResultBadgeClass(log.Result)">@log.Result</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="d-flex justify-between align-center mt-3">
+            <span class="text-muted">Showing @FilteredLogs.Count of @_logs.Count events</span>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary btn-sm" disabled="@(_currentPage <= 1)" @onclick="PreviousPage">Previous</button>
+                <button class="btn btn-secondary btn-sm" disabled="@(_currentPage >= TotalPages)" @onclick="NextPage">Next</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private string _searchTerm = "";
+    private string _eventTypeFilter = "";
+    private string _resultFilter = "";
+    private string _timeRangeFilter = "24h";
+    private List<AuditLogEntry> _logs = new();
+    private int _currentPage = 1;
+    private int _pageSize = 50;
+
+    private int TotalPages => (int)Math.Ceiling((double)FilteredLogs.Count / _pageSize);
+
+    private List<AuditLogEntry> FilteredLogs
+    {
+        get
+        {
+            var filtered = _logs.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_eventTypeFilter))
+                filtered = filtered.Where(l => l.EventType == _eventTypeFilter);
+
+            if (!string.IsNullOrWhiteSpace(_resultFilter))
+                filtered = filtered.Where(l => l.Result == _resultFilter);
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+                filtered = filtered.Where(l =>
+                    l.SubjectExternalId.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    (l.ResourceType?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.ResourceId?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    l.ApplicationCode.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
+
+            return filtered.OrderByDescending(l => l.Timestamp).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        _loading = true;
+        try
+        {
+            // TODO: Load from API
+            var random = new Random();
+            var eventTypes = new[] { "PermissionCheck", "RoleAssigned", "RoleRevoked", "TeamJoined" };
+            var results = new[] { "allowed", "allowed", "allowed", "denied" }; // 75% allowed
+            var subjects = new[] { "john.doe@example.com", "jane.smith@example.com", "bob.wilson@example.com", "svc-backup" };
+            var apps = new[] { "andy-docs", "andy-auth", "andy-portal" };
+            var resources = new[] { "document", "folder", "user", "role", "team" };
+            var actions = new[] { "read", "write", "delete", "create", "admin" };
+
+            _logs = Enumerable.Range(0, 100).Select(i => new AuditLogEntry
+            {
+                Id = Guid.NewGuid(),
+                Timestamp = DateTimeOffset.UtcNow.AddMinutes(-random.Next(0, 1440)),
+                EventType = eventTypes[random.Next(eventTypes.Length)],
+                SubjectExternalId = subjects[random.Next(subjects.Length)],
+                ApplicationCode = apps[random.Next(apps.Length)],
+                ResourceType = resources[random.Next(resources.Length)],
+                ResourceId = random.Next(2) == 0 ? $"res-{random.Next(1000, 9999)}" : null,
+                Action = actions[random.Next(actions.Length)],
+                Result = results[random.Next(results.Length)]
+            }).OrderByDescending(l => l.Timestamp).ToList();
+        }
+        finally
+        {
+            _loading = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    private string GetResultBadgeClass(string result) => result switch
+    {
+        "allowed" => "badge-success",
+        "denied" => "badge-danger",
+        _ => "badge-secondary"
+    };
+
+    private async Task RefreshLog()
+    {
+        await LoadLogs();
+    }
+
+    private void PreviousPage()
+    {
+        if (_currentPage > 1)
+            _currentPage--;
+    }
+
+    private void NextPage()
+    {
+        if (_currentPage < TotalPages)
+            _currentPage++;
+    }
+
+    private class AuditLogEntry
+    {
+        public Guid Id { get; set; }
+        public DateTimeOffset Timestamp { get; set; }
+        public string EventType { get; set; } = "";
+        public string SubjectExternalId { get; set; } = "";
+        public string ApplicationCode { get; set; } = "";
+        public string? ResourceType { get; set; }
+        public string? ResourceId { get; set; }
+        public string? Action { get; set; }
+        public string Result { get; set; } = "";
+    }
+}

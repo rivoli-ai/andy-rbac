@@ -1,0 +1,246 @@
+@page "/roles"
+
+<PageTitle>Roles - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <h1>Roles</h1>
+            <p class="subtitle">Define roles and their permissions</p>
+        </div>
+        <button class="btn btn-primary" @onclick="ShowCreateModal">
+            + New Role
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="d-flex align-center gap-2">
+        <div class="search-box" style="flex: 1;">
+            <input type="text" class="form-control" placeholder="Search roles..." @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+        <select class="form-control" style="width: 200px;" @bind="_applicationFilter">
+            <option value="">All Applications</option>
+            @foreach (var app in _applications)
+            {
+                <option value="@app.Code">@app.Name</option>
+            }
+        </select>
+    </div>
+</div>
+
+<div class="table-container">
+    @if (_loading)
+    {
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    }
+    else if (FilteredRoles.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-title">No roles found</div>
+            <p class="empty-state-text">Create your first role to get started.</p>
+            <button class="btn btn-primary" @onclick="ShowCreateModal">Create Role</button>
+        </div>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Application</th>
+                    <th>Permissions</th>
+                    <th>Subjects</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var role in FilteredRoles)
+                {
+                    <tr>
+                        <td>
+                            <strong>@role.Name</strong>
+                            @if (!string.IsNullOrEmpty(role.Description))
+                            {
+                                <br /><span class="text-muted text-sm">@role.Description</span>
+                            }
+                        </td>
+                        <td><code>@role.ApplicationCode</code></td>
+                        <td>@role.PermissionCount</td>
+                        <td>@role.SubjectCount</td>
+                        <td class="text-muted">@role.CreatedAt.ToString("d")</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewRole(role)">View</button>
+                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteRole(role)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@if (_showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">Create Role</h3>
+                <button class="btn btn-icon" @onclick="CloseModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label required">Application</label>
+                    <select class="form-control" @bind="_newRole.ApplicationCode">
+                        <option value="">Select application...</option>
+                        @foreach (var app in _applications)
+                        {
+                            <option value="@app.Code">@app.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Name</label>
+                    <input type="text" class="form-control" @bind="_newRole.Name" placeholder="Admin" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" @bind="_newRole.Description" rows="3" placeholder="Optional description"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateRole">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private string _searchTerm = "";
+    private string _applicationFilter = "";
+    private List<RoleDto> _roles = new();
+    private List<ApplicationDto> _applications = new();
+    private bool _showCreateModal = false;
+    private CreateRoleModel _newRole = new();
+
+    private List<RoleDto> FilteredRoles
+    {
+        get
+        {
+            var filtered = _roles.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_applicationFilter))
+                filtered = filtered.Where(r => r.ApplicationCode == _applicationFilter);
+
+            if (!string.IsNullOrWhiteSpace(_searchTerm))
+                filtered = filtered.Where(r =>
+                    r.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    (r.Description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            return filtered.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        try
+        {
+            // TODO: Load from API
+            _applications = new List<ApplicationDto>
+            {
+                new() { Code = "andy-docs", Name = "Andy Docs" },
+                new() { Code = "andy-auth", Name = "Andy Auth" },
+                new() { Code = "andy-portal", Name = "Andy Portal" },
+            };
+
+            _roles = new List<RoleDto>
+            {
+                new() { Id = Guid.NewGuid(), Name = "Admin", Description = "Full administrative access", ApplicationCode = "andy-docs", PermissionCount = 12, SubjectCount = 3, CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) },
+                new() { Id = Guid.NewGuid(), Name = "Editor", Description = "Can create and edit content", ApplicationCode = "andy-docs", PermissionCount = 8, SubjectCount = 10, CreatedAt = DateTimeOffset.UtcNow.AddDays(-25) },
+                new() { Id = Guid.NewGuid(), Name = "Viewer", Description = "Read-only access", ApplicationCode = "andy-docs", PermissionCount = 3, SubjectCount = 25, CreatedAt = DateTimeOffset.UtcNow.AddDays(-20) },
+                new() { Id = Guid.NewGuid(), Name = "Admin", Description = "System administrator", ApplicationCode = "andy-auth", PermissionCount = 15, SubjectCount = 2, CreatedAt = DateTimeOffset.UtcNow.AddDays(-60) },
+                new() { Id = Guid.NewGuid(), Name = "User Manager", Description = "Can manage users", ApplicationCode = "andy-auth", PermissionCount = 6, SubjectCount = 5, CreatedAt = DateTimeOffset.UtcNow.AddDays(-45) },
+            };
+        }
+        finally
+        {
+            _loading = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    private void ShowCreateModal()
+    {
+        _newRole = new CreateRoleModel();
+        _showCreateModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showCreateModal = false;
+    }
+
+    private async Task CreateRole()
+    {
+        // TODO: Call API
+        _roles.Add(new RoleDto
+        {
+            Id = Guid.NewGuid(),
+            Name = _newRole.Name,
+            Description = _newRole.Description,
+            ApplicationCode = _newRole.ApplicationCode,
+            PermissionCount = 0,
+            SubjectCount = 0,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        CloseModal();
+        await Task.CompletedTask;
+    }
+
+    private void ViewRole(RoleDto role)
+    {
+        // TODO: Navigate to detail page
+    }
+
+    private async Task DeleteRole(RoleDto role)
+    {
+        // TODO: Confirm and delete
+        _roles.Remove(role);
+        await Task.CompletedTask;
+    }
+
+    private class RoleDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public string ApplicationCode { get; set; } = "";
+        public int PermissionCount { get; set; }
+        public int SubjectCount { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+    }
+
+    private class ApplicationDto
+    {
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+
+    private class CreateRoleModel
+    {
+        public string ApplicationCode { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+    }
+}

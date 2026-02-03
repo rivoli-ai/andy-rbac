@@ -1,0 +1,217 @@
+@page "/subjects"
+
+<PageTitle>Subjects - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <h1>Subjects</h1>
+            <p class="subtitle">Manage users and their role assignments</p>
+        </div>
+        <button class="btn btn-primary" @onclick="ShowCreateModal">
+            + New Subject
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="d-flex align-center gap-2">
+        <div class="search-box" style="flex: 1;">
+            <input type="text" class="form-control" placeholder="Search subjects..." @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+    </div>
+</div>
+
+<div class="table-container">
+    @if (_loading)
+    {
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    }
+    else if (FilteredSubjects.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-title">No subjects found</div>
+            <p class="empty-state-text">Create your first subject to get started.</p>
+            <button class="btn btn-primary" @onclick="ShowCreateModal">Create Subject</button>
+        </div>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>External ID</th>
+                    <th>Display Name</th>
+                    <th>Type</th>
+                    <th>Roles</th>
+                    <th>Teams</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var subject in FilteredSubjects)
+                {
+                    <tr>
+                        <td><code>@subject.ExternalId</code></td>
+                        <td>@subject.DisplayName</td>
+                        <td>
+                            <span class="badge @GetTypeBadgeClass(subject.Type)">@subject.Type</span>
+                        </td>
+                        <td>@subject.RoleCount</td>
+                        <td>@subject.TeamCount</td>
+                        <td class="text-muted">@subject.CreatedAt.ToString("d")</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewSubject(subject)">View</button>
+                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteSubject(subject)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@if (_showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">Create Subject</h3>
+                <button class="btn btn-icon" @onclick="CloseModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label required">External ID</label>
+                    <input type="text" class="form-control" @bind="_newSubject.ExternalId" placeholder="user@example.com or user-id-123" />
+                    <p class="form-text">Unique identifier from your identity provider</p>
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Display Name</label>
+                    <input type="text" class="form-control" @bind="_newSubject.DisplayName" placeholder="John Doe" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label required">Type</label>
+                    <select class="form-control" @bind="_newSubject.Type">
+                        <option value="user">User</option>
+                        <option value="service">Service Account</option>
+                        <option value="api-key">API Key</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateSubject">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private string _searchTerm = "";
+    private List<SubjectDto> _subjects = new();
+    private bool _showCreateModal = false;
+    private CreateSubjectModel _newSubject = new();
+
+    private List<SubjectDto> FilteredSubjects => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _subjects
+        : _subjects.Where(s =>
+            s.ExternalId.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            s.DisplayName.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubjects();
+    }
+
+    private async Task LoadSubjects()
+    {
+        _loading = true;
+        try
+        {
+            // TODO: Load from API
+            _subjects = new List<SubjectDto>
+            {
+                new() { Id = Guid.NewGuid(), ExternalId = "john.doe@example.com", DisplayName = "John Doe", Type = "user", RoleCount = 3, TeamCount = 2, CreatedAt = DateTimeOffset.UtcNow.AddDays(-90) },
+                new() { Id = Guid.NewGuid(), ExternalId = "jane.smith@example.com", DisplayName = "Jane Smith", Type = "user", RoleCount = 2, TeamCount = 1, CreatedAt = DateTimeOffset.UtcNow.AddDays(-60) },
+                new() { Id = Guid.NewGuid(), ExternalId = "bob.wilson@example.com", DisplayName = "Bob Wilson", Type = "user", RoleCount = 1, TeamCount = 1, CreatedAt = DateTimeOffset.UtcNow.AddDays(-30) },
+                new() { Id = Guid.NewGuid(), ExternalId = "svc-backup", DisplayName = "Backup Service", Type = "service", RoleCount = 1, TeamCount = 0, CreatedAt = DateTimeOffset.UtcNow.AddDays(-120) },
+                new() { Id = Guid.NewGuid(), ExternalId = "api-integration-01", DisplayName = "Integration API Key", Type = "api-key", RoleCount = 2, TeamCount = 0, CreatedAt = DateTimeOffset.UtcNow.AddDays(-45) },
+            };
+        }
+        finally
+        {
+            _loading = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    private string GetTypeBadgeClass(string type) => type switch
+    {
+        "user" => "badge-success",
+        "service" => "badge-info",
+        "api-key" => "badge-warning",
+        _ => "badge-secondary"
+    };
+
+    private void ShowCreateModal()
+    {
+        _newSubject = new CreateSubjectModel { Type = "user" };
+        _showCreateModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showCreateModal = false;
+    }
+
+    private async Task CreateSubject()
+    {
+        // TODO: Call API
+        _subjects.Add(new SubjectDto
+        {
+            Id = Guid.NewGuid(),
+            ExternalId = _newSubject.ExternalId,
+            DisplayName = _newSubject.DisplayName,
+            Type = _newSubject.Type,
+            RoleCount = 0,
+            TeamCount = 0,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        CloseModal();
+        await Task.CompletedTask;
+    }
+
+    private void ViewSubject(SubjectDto subject)
+    {
+        // TODO: Navigate to detail page
+    }
+
+    private async Task DeleteSubject(SubjectDto subject)
+    {
+        // TODO: Confirm and delete
+        _subjects.Remove(subject);
+        await Task.CompletedTask;
+    }
+
+    private class SubjectDto
+    {
+        public Guid Id { get; set; }
+        public string ExternalId { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Type { get; set; } = "";
+        public int RoleCount { get; set; }
+        public int TeamCount { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+    }
+
+    private class CreateSubjectModel
+    {
+        public string ExternalId { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Type { get; set; } = "user";
+    }
+}

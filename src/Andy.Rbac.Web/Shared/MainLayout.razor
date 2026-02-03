@@ -1,20 +1,101 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Navigation
 
 <div class="page">
     <nav class="sidebar">
-        <div class="brand">Andy RBAC</div>
-        <ul class="nav">
-            <li><a href="/">Dashboard</a></li>
-            <li><a href="/roles">Roles</a></li>
-            <li><a href="/subjects">Subjects</a></li>
-            <li><a href="/applications">Applications</a></li>
-            <li><a href="/audit">Audit Log</a></li>
-        </ul>
+        <div class="sidebar-brand">
+            <div class="logo">R</div>
+            <span class="brand-text">Andy RBAC</span>
+        </div>
+
+        <div class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-title">Overview</div>
+                <ul class="nav-list">
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                            <span class="nav-icon">&#x1F4CA;</span>
+                            Dashboard
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Access Control</div>
+                <ul class="nav-list">
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="applications">
+                            <span class="nav-icon">&#x1F4E6;</span>
+                            Applications
+                        </NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="roles">
+                            <span class="nav-icon">&#x1F511;</span>
+                            Roles
+                        </NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="subjects">
+                            <span class="nav-icon">&#x1F464;</span>
+                            Subjects
+                        </NavLink>
+                    </li>
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="teams">
+                            <span class="nav-icon">&#x1F465;</span>
+                            Teams
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Monitoring</div>
+                <ul class="nav-list">
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="audit">
+                            <span class="nav-icon">&#x1F4DD;</span>
+                            Audit Log
+                        </NavLink>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div>Andy RBAC v0.1.0-alpha</div>
+        </div>
     </nav>
 
-    <main>
+    <div class="main-content">
+        <header class="header">
+            <div class="header-title">@GetPageTitle()</div>
+            <div class="header-actions">
+                <span class="text-muted">Admin</span>
+            </div>
+        </header>
+
         <div class="content">
             @Body
         </div>
-    </main>
+    </div>
 </div>
+
+@code {
+    private string GetPageTitle()
+    {
+        var uri = Navigation.ToBaseRelativePath(Navigation.Uri);
+        return uri switch
+        {
+            "" => "Dashboard",
+            "applications" => "Applications",
+            "roles" => "Roles",
+            "subjects" => "Subjects",
+            "teams" => "Teams",
+            "audit" => "Audit Log",
+            _ => "Andy RBAC"
+        };
+    }
+}

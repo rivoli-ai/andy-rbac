@@ -1,0 +1,195 @@
+@page "/teams"
+
+<PageTitle>Teams - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <h1>Teams</h1>
+            <p class="subtitle">Organize subjects into teams with shared permissions</p>
+        </div>
+        <button class="btn btn-primary" @onclick="ShowCreateModal">
+            + New Team
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="d-flex align-center gap-2">
+        <div class="search-box" style="flex: 1;">
+            <input type="text" class="form-control" placeholder="Search teams..." @bind="_searchTerm" @bind:event="oninput" />
+        </div>
+    </div>
+</div>
+
+<div class="table-container">
+    @if (_loading)
+    {
+        <div class="loading">
+            <div class="spinner"></div>
+        </div>
+    }
+    else if (FilteredTeams.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-title">No teams found</div>
+            <p class="empty-state-text">Create your first team to get started.</p>
+            <button class="btn btn-primary" @onclick="ShowCreateModal">Create Team</button>
+        </div>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Members</th>
+                    <th>Roles</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var team in FilteredTeams)
+                {
+                    <tr>
+                        <td><strong>@team.Name</strong></td>
+                        <td class="text-muted">@(team.Description ?? "-")</td>
+                        <td>
+                            <span class="badge badge-info">@team.MemberCount members</span>
+                        </td>
+                        <td>@team.RoleCount</td>
+                        <td class="text-muted">@team.CreatedAt.ToString("d")</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm" @onclick="() => ViewTeam(team)">View</button>
+                            <button class="btn btn-danger btn-sm" @onclick="() => DeleteTeam(team)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@if (_showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 class="modal-title">Create Team</h3>
+                <button class="btn btn-icon" @onclick="CloseModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label required">Name</label>
+                    <input type="text" class="form-control" @bind="_newTeam.Name" placeholder="Engineering" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" @bind="_newTeam.Description" rows="3" placeholder="Optional description"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateTeam">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private string _searchTerm = "";
+    private List<TeamDto> _teams = new();
+    private bool _showCreateModal = false;
+    private CreateTeamModel _newTeam = new();
+
+    private List<TeamDto> FilteredTeams => string.IsNullOrWhiteSpace(_searchTerm)
+        ? _teams
+        : _teams.Where(t =>
+            t.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            (t.Description?.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTeams();
+    }
+
+    private async Task LoadTeams()
+    {
+        _loading = true;
+        try
+        {
+            // TODO: Load from API
+            _teams = new List<TeamDto>
+            {
+                new() { Id = Guid.NewGuid(), Name = "Engineering", Description = "Software engineering team", MemberCount = 12, RoleCount = 4, CreatedAt = DateTimeOffset.UtcNow.AddDays(-180) },
+                new() { Id = Guid.NewGuid(), Name = "Product", Description = "Product management team", MemberCount = 5, RoleCount = 3, CreatedAt = DateTimeOffset.UtcNow.AddDays(-150) },
+                new() { Id = Guid.NewGuid(), Name = "Design", Description = "UX and design team", MemberCount = 4, RoleCount = 2, CreatedAt = DateTimeOffset.UtcNow.AddDays(-120) },
+                new() { Id = Guid.NewGuid(), Name = "Operations", Description = "DevOps and infrastructure", MemberCount = 3, RoleCount = 5, CreatedAt = DateTimeOffset.UtcNow.AddDays(-90) },
+                new() { Id = Guid.NewGuid(), Name = "Leadership", Description = "Executive team", MemberCount = 4, RoleCount = 6, CreatedAt = DateTimeOffset.UtcNow.AddDays(-200) },
+            };
+        }
+        finally
+        {
+            _loading = false;
+        }
+        await Task.CompletedTask;
+    }
+
+    private void ShowCreateModal()
+    {
+        _newTeam = new CreateTeamModel();
+        _showCreateModal = true;
+    }
+
+    private void CloseModal()
+    {
+        _showCreateModal = false;
+    }
+
+    private async Task CreateTeam()
+    {
+        // TODO: Call API
+        _teams.Add(new TeamDto
+        {
+            Id = Guid.NewGuid(),
+            Name = _newTeam.Name,
+            Description = _newTeam.Description,
+            MemberCount = 0,
+            RoleCount = 0,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        CloseModal();
+        await Task.CompletedTask;
+    }
+
+    private void ViewTeam(TeamDto team)
+    {
+        // TODO: Navigate to detail page
+    }
+
+    private async Task DeleteTeam(TeamDto team)
+    {
+        // TODO: Confirm and delete
+        _teams.Remove(team);
+        await Task.CompletedTask;
+    }
+
+    private class TeamDto
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public int MemberCount { get; set; }
+        public int RoleCount { get; set; }
+        public DateTimeOffset CreatedAt { get; set; }
+    }
+
+    private class CreateTeamModel
+    {
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+    }
+}
