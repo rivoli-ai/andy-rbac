@@ -20,16 +20,16 @@
     --sidebar-collapsed-width: 70px;
     --header-height: 64px;
 
-    /* Font sizes */
-    --font-xs: 0.8125rem;    /* 13px */
-    --font-sm: 0.875rem;     /* 14px */
-    --font-base: 1rem;       /* 16px */
-    --font-md: 1.0625rem;    /* 17px */
-    --font-lg: 1.125rem;     /* 18px */
-    --font-xl: 1.25rem;      /* 20px */
-    --font-2xl: 1.5rem;      /* 24px */
-    --font-3xl: 1.875rem;    /* 30px */
-    --font-4xl: 2.25rem;     /* 36px */
+    /* Font sizes - larger for better readability */
+    --font-xs: 0.875rem;     /* 14px */
+    --font-sm: 1rem;         /* 16px */
+    --font-base: 1.125rem;   /* 18px */
+    --font-md: 1.1875rem;    /* 19px */
+    --font-lg: 1.25rem;      /* 20px */
+    --font-xl: 1.5rem;       /* 24px */
+    --font-2xl: 1.75rem;     /* 28px */
+    --font-3xl: 2.25rem;     /* 36px */
+    --font-4xl: 2.75rem;     /* 44px */
 }
 
 * {
@@ -49,7 +49,7 @@ body {
     background: var(--background);
     min-height: 100vh;
     color: var(--text);
-    font-size: var(--font-base);
+    font-size: 18px;
     line-height: 1.6;
     font-weight: 400;
     letter-spacing: -0.01em;
