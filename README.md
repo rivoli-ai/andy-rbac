@@ -21,7 +21,7 @@ Role-Based Access Control (RBAC) system for Andy applications.
 - **Fine-Grained Permissions** - Resource-level and instance-level permissions
 - **Multi-Application Support** - Single RBAC server for multiple applications
 - **Team Management** - Organize users into teams with shared permissions
-- **gRPC & REST APIs** - High-performance permission checking
+- **gRPC and REST APIs** - High-performance permission checking
 - **ASP.NET Core Integration** - Authorization handlers and policy providers
 - **Caching** - In-memory caching for fast permission lookups
 - **MCP Support** - Model Context Protocol tools for AI assistants
@@ -36,10 +36,10 @@ Role-Based Access Control (RBAC) system for Andy applications.
 ### Local Development
 
 ```bash
-# 1. Start PostgreSQL
+# Start PostgreSQL
 docker-compose up -d
 
-# 2. Run the API server
+# Run the API server
 cd src/Andy.Rbac.Api
 dotnet run
 ```
@@ -50,20 +50,26 @@ API runs at: **https://localhost:5001**
 
 ```
 src/
-├── Andy.Rbac/              # Core library (models, abstractions, authorization)
-├── Andy.Rbac.Api/          # REST & gRPC API server
-├── Andy.Rbac.Client/       # HTTP/gRPC client library
-├── Andy.Rbac.Infrastructure/ # EF Core, repositories
-├── Andy.Rbac.Web/          # Admin UI (Blazor)
-└── Andy.Rbac.Cli/          # Command-line interface
+  Andy.Rbac/                 Core library (models, abstractions, authorization)
+  Andy.Rbac.Api/             REST and gRPC API server
+  Andy.Rbac.Client/          HTTP/gRPC client library
+  Andy.Rbac.Infrastructure/  EF Core, repositories
+  Andy.Rbac.Web/             Admin UI (Blazor)
+  Andy.Rbac.Cli/             Command-line interface
 
 tests/
-├── Andy.Rbac.Tests/        # Core library tests
-├── Andy.Rbac.Api.Tests/    # API integration tests
-└── Andy.Rbac.Client.Tests/ # Client library tests
+  Andy.Rbac.Tests/           Core library tests
+  Andy.Rbac.Api.Tests/       API integration tests
+  Andy.Rbac.Client.Tests/    Client library tests
 ```
 
-## Client Library
+## NuGet Packages
+
+| Package | Description |
+|---------|-------------|
+| [Andy.Rbac](https://www.nuget.org/packages/Andy.Rbac) | Core RBAC library with models, abstractions, and authorization |
+| [Andy.Rbac.Client](https://www.nuget.org/packages/Andy.Rbac.Client) | HTTP and gRPC client for the RBAC API |
+| [Andy.Rbac.Cli](https://www.nuget.org/packages/Andy.Rbac.Cli) | Command-line tool for managing RBAC resources |
 
 Install the client library to integrate RBAC into your application:
 
@@ -71,7 +77,8 @@ Install the client library to integrate RBAC into your application:
 dotnet add package Andy.Rbac.Client
 ```
 
-**Usage:**
+### Usage
+
 ```csharp
 // Add to Program.cs
 builder.Services.AddRbacClient(options =>
@@ -124,10 +131,6 @@ dotnet test
 dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage"
 ```
 
-**Current Status:**
-- Total tests: 402
-- Line coverage: 99.3%
-
 ## Technology Stack
 
 - **Framework**: ASP.NET Core 8.0
@@ -138,10 +141,4 @@ dotnet test --settings coverlet.runsettings --collect:"XPlat Code Coverage"
 
 ## License
 
-Apache 2.0
-
----
-
-**Status:** Alpha
-**Version:** 0.1.0-alpha
-**Last Updated:** 2026-02-03
+Apache 2.0 - see the [LICENSE](LICENSE) file for details.

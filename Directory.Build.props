@@ -3,16 +3,42 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
+
+    <!-- Versioning -->
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix Condition="'$(GITHUB_REF)' == 'refs/heads/develop'">beta</VersionSuffix>
+    <VersionSuffix Condition="'$(GITHUB_REF)' == 'refs/heads/main'">rc</VersionSuffix>
 
     <!-- Package metadata -->
     <Authors>Rivoli AI</Authors>
     <Company>Rivoli AI</Company>
     <Product>Andy RBAC</Product>
-    <Copyright>Copyright (c) Rivoli AI 2024</Copyright>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) Rivoli AI $([System.DateTime]::Now.ToString("yyyy"))</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/rivoli-ai/andy-rbac</PackageProjectUrl>
     <RepositoryUrl>https://github.com/rivoli-ai/andy-rbac</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageTags>rbac;authorization;permissions;security;dotnet</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>andy_rbac_icon.png</PackageIcon>
+
+    <!-- Build Configuration -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Code Quality -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <!-- Source Link -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All"/>
+  </ItemGroup>
 </Project>

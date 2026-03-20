@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <PackageId>Andy.Rbac.Client</PackageId>
-    <Version>1.0.0</Version>
     <Description>HTTP and gRPC client for Andy RBAC API. Use this package in applications that need to check permissions against the centralized RBAC service.</Description>
     <PackageTags>rbac;authorization;client;grpc</PackageTags>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +26,11 @@
 
   <ItemGroup>
     <Protobuf Include="..\..\proto\rbac.proto" GrpcServices="Client" Link="Protos\rbac.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\assets\andy_rbac_icon.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
