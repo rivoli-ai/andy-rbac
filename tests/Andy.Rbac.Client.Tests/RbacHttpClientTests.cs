@@ -123,7 +123,7 @@ public class RbacHttpClientTests
         var client = CreateClient(handlerMock.Object);
 
         // Act
-        var result = await client.HasPermissionAsync("user-123", "test-app:document:read", "doc-123");
+        var result = await client.HasPermissionAsync("user-123", "test-app:document:read", resourceInstanceId: "doc-123");
 
         // Assert
         result.Should().BeTrue();
@@ -284,7 +284,7 @@ public class RbacHttpClientTests
         var client = CreateClient(handlerMock.Object);
 
         // Act
-        var result = await client.GetPermissionsAsync("user-123", "other-app");
+        var result = await client.GetPermissionsAsync("user-123", applicationCode: "other-app");
 
         // Assert
         result.Should().BeEquivalentTo(permissions);
