@@ -238,9 +238,18 @@ using (var scope = app.Services.CreateScope())
     await DataSeeder.SeedAsync(db);
 
     // Seed application-specific data
-    foreach (var appCode in new[] { "andy-auth", "andy-docs", "andy-cli", "andy-agentic-web" })
+    foreach (var appCode in new[] { "andy-auth", "andy-docs", "andy-cli", "andy-agentic-web", "code-index", "containers" })
     {
         await DataSeeder.SeedApplicationDataAsync(db, appCode);
+    }
+
+    // Seed super-admin permissions for all resource types
+    await DataSeeder.SeedSuperAdminPermissionsAsync(db);
+
+    // Seed test user with super-admin role (development only)
+    if (app.Environment.IsDevelopment())
+    {
+        await DataSeeder.SeedTestSubjectAsync(db, "45abdfa0-da00-4bff-9226-9c91fcda15b1", "test@andy.local");
     }
 }
 

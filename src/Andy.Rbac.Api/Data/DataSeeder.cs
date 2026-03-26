@@ -74,6 +74,18 @@ public static class DataSeeder
                 Code = "andy-rbac",
                 Name = "Andy RBAC",
                 Description = "Role-Based Access Control service"
+            },
+            new Application
+            {
+                Code = "code-index",
+                Name = "Andy Code Index",
+                Description = "Code indexing and search platform"
+            },
+            new Application
+            {
+                Code = "containers",
+                Name = "Andy Containers",
+                Description = "Container management platform"
             }
         };
 
@@ -141,6 +153,12 @@ public static class DataSeeder
                 break;
             case "andy-agentic-web":
                 await SeedAndyAgenticWebAsync(db, app, ct);
+                break;
+            case "code-index":
+                await SeedCodeIndexAsync(db, app, ct);
+                break;
+            case "containers":
+                await SeedContainersAsync(db, app, ct);
                 break;
         }
 
@@ -276,6 +294,154 @@ public static class DataSeeder
             {
                 db.Roles.Add(role);
             }
+        }
+    }
+
+    private static async Task SeedCodeIndexAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "repository", Name = "Repository", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
+            new ResourceType { ApplicationId = app.Id, Code = "task", Name = "Task", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "enrichment", Name = "Enrichment", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "search", Name = "Search", SupportsInstances = false },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+            {
+                db.ResourceTypes.Add(rt);
+            }
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Code Index", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Code Index user", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+            {
+                db.Roles.Add(role);
+            }
+        }
+    }
+
+    private static async Task SeedContainersAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "container", Name = "Container", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "image", Name = "Image", SupportsInstances = true },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+            {
+                db.ResourceTypes.Add(rt);
+            }
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Containers", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Containers user", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+            {
+                db.Roles.Add(role);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Seeds super-admin permissions for all resource types and creates a test user subject.
+    /// </summary>
+    public static async Task SeedSuperAdminPermissionsAsync(RbacDbContext db, CancellationToken ct = default)
+    {
+        var superAdminRole = await db.Roles.FirstOrDefaultAsync(r => r.Code == "super-admin" && r.ApplicationId == null, ct);
+        if (superAdminRole == null) return;
+
+        var actions = await db.Actions.ToListAsync(ct);
+        var resourceTypes = await db.ResourceTypes.ToListAsync(ct);
+
+        foreach (var rt in resourceTypes)
+        {
+            foreach (var action in actions)
+            {
+                // Create permission if it doesn't exist
+                var permission = await db.Permissions
+                    .FirstOrDefaultAsync(p => p.ResourceTypeId == rt.Id && p.ActionId == action.Id, ct);
+
+                if (permission == null)
+                {
+                    permission = new Permission
+                    {
+                        ResourceTypeId = rt.Id,
+                        ActionId = action.Id,
+                        Description = $"{action.Name} {rt.Name}"
+                    };
+                    db.Permissions.Add(permission);
+                    await db.SaveChangesAsync(ct);
+                }
+
+                // Link to super-admin role
+                if (!await db.RolePermissions.AnyAsync(rp => rp.RoleId == superAdminRole.Id && rp.PermissionId == permission.Id, ct))
+                {
+                    db.RolePermissions.Add(new RolePermission
+                    {
+                        RoleId = superAdminRole.Id,
+                        PermissionId = permission.Id
+                    });
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Seeds a test user subject with super-admin role.
+    /// </summary>
+    public static async Task SeedTestSubjectAsync(RbacDbContext db, string externalId, string email, CancellationToken ct = default)
+    {
+        var subject = await db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == externalId, ct);
+        if (subject == null)
+        {
+            subject = new Subject
+            {
+                ExternalId = externalId,
+                Provider = "andy-auth",
+                Type = SubjectType.User,
+                Email = email,
+                DisplayName = "Test User",
+                IsActive = true
+            };
+            db.Subjects.Add(subject);
+            await db.SaveChangesAsync(ct);
+        }
+
+        var superAdminRole = await db.Roles.FirstOrDefaultAsync(r => r.Code == "super-admin" && r.ApplicationId == null, ct);
+        if (superAdminRole == null) return;
+
+        if (!await db.SubjectRoles.AnyAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == superAdminRole.Id, ct))
+        {
+            db.SubjectRoles.Add(new SubjectRole
+            {
+                SubjectId = subject.Id,
+                RoleId = superAdminRole.Id,
+                GrantedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync(ct);
         }
     }
 }
