@@ -20,22 +20,28 @@ services:
     build:
       context: .
       dockerfile: src/Andy.Rbac.Api/Dockerfile
+      additional_contexts:
+        certs: ./certs
     container_name: andy-rbac-api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_URLS=https://+:8443
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=andy_rbac;Username=postgres;Password=postgres
-      - Auth__Authority=http://localhost:7001
+      - Auth__Authority=https://host.docker.internal:5001
       - Auth__Audience=andy-rbac
-      - Cors__Origins__0=http://localhost:5180
-      - Cors__Origins__1=http://localhost:3000
+      - Cors__Origins__0=https://localhost:5180
+      - Cors__Origins__1=https://localhost:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "5100:8080"
+      - "7003:8443"
+    volumes:
+      - ./certs:/usr/local/share/ca-certificates/custom:ro
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-fk", "https://localhost:8443/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -45,16 +51,22 @@ services:
     build:
       context: .
       dockerfile: src/Andy.Rbac.Web/Dockerfile
+      additional_contexts:
+        certs: ./certs
     container_name: andy-rbac-web
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_URLS=https://+:8443
       - Rbac__ApplicationCode=andy-rbac
-      - Rbac__ApiBaseUrl=http://api:8080
-      - Auth__Authority=http://localhost:7001
+      - Rbac__ApiBaseUrl=https://api:8443
+      - Auth__Authority=https://host.docker.internal:5001
       - Auth__Audience=andy-rbac-web
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "5180:8080"
+      - "5180:8443"
+    volumes:
+      - ./certs:/usr/local/share/ca-certificates/custom:ro
     depends_on:
       - api
 

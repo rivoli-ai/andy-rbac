@@ -1,38 +1,52 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-WORKDIR /app
-EXPOSE 8080
-EXPOSE 8081
-
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
+WORKDIR /build
 
-# Copy solution and project files
-COPY ["Directory.Build.props", "."]
-COPY ["Directory.Packages.props", "."]
-COPY ["Andy.Rbac.sln", "."]
-COPY ["src/Andy.Rbac/Andy.Rbac.csproj", "src/Andy.Rbac/"]
-COPY ["src/Andy.Rbac.Client/Andy.Rbac.Client.csproj", "src/Andy.Rbac.Client/"]
-COPY ["src/Andy.Rbac.Infrastructure/Andy.Rbac.Infrastructure.csproj", "src/Andy.Rbac.Infrastructure/"]
-COPY ["src/Andy.Rbac.Api/Andy.Rbac.Api.csproj", "src/Andy.Rbac.Api/"]
-COPY ["proto/rbac.proto", "proto/"]
+# Trust corporate CAs
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
+COPY --from=certs . /usr/local/share/ca-certificates/corporate/
+RUN find /usr/local/share/ca-certificates/corporate/ -name '.git*' -delete 2>/dev/null || true && \
+    find /usr/local/share/ca-certificates/corporate/ -name 'README.md' -delete 2>/dev/null || true && \
+    update-ca-certificates
 
-# Restore
-RUN dotnet restore "src/Andy.Rbac.Api/Andy.Rbac.Api.csproj"
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs \
+    DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0 \
+    NUGET_CERT_REVOCATION_MODE=off \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NUGET_SIGNATURE_VERIFICATION=false
 
-# Copy source
-COPY ["src/Andy.Rbac/", "src/Andy.Rbac/"]
-COPY ["src/Andy.Rbac.Client/", "src/Andy.Rbac.Client/"]
-COPY ["src/Andy.Rbac.Infrastructure/", "src/Andy.Rbac.Infrastructure/"]
-COPY ["src/Andy.Rbac.Api/", "src/Andy.Rbac.Api/"]
+COPY Directory.Build.props Directory.Packages.props Andy.Rbac.sln ./
+COPY proto/ proto/
+COPY src/Andy.Rbac/Andy.Rbac.csproj src/Andy.Rbac/
+COPY src/Andy.Rbac.Client/Andy.Rbac.Client.csproj src/Andy.Rbac.Client/
+COPY src/Andy.Rbac.Infrastructure/Andy.Rbac.Infrastructure.csproj src/Andy.Rbac.Infrastructure/
+COPY src/Andy.Rbac.Api/Andy.Rbac.Api.csproj src/Andy.Rbac.Api/
+RUN dotnet restore src/Andy.Rbac.Api/Andy.Rbac.Api.csproj
 
-# Build
-WORKDIR "/src/src/Andy.Rbac.Api"
-RUN dotnet build -c Release -o /app/build
+COPY . .
+RUN dotnet publish src/Andy.Rbac.Api/Andy.Rbac.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
-FROM build AS publish
-RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false
-
-FROM base AS final
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
-COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "Andy.Rbac.Api.dll"]
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl openssl && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app/publish .
+
+RUN mkdir -p /https && \
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+      -keyout /tmp/dev.key -out /tmp/dev.crt \
+      -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" && \
+    openssl pkcs12 -export -out /https/aspnetapp.pfx \
+      -inkey /tmp/dev.key -in /tmp/dev.crt -passout pass:devcert && \
+    rm -f /tmp/dev.key /tmp/dev.crt
+
+RUN printf '#!/bin/sh\nset -e\nif ls /usr/local/share/ca-certificates/custom/*.crt 1>/dev/null 2>&1 || ls /usr/local/share/ca-certificates/custom/*.pem 1>/dev/null 2>&1; then\n    update-ca-certificates 2>/dev/null || true\nfi\nexec "$@"\n' > /docker-entrypoint.sh && \
+    chmod +x /docker-entrypoint.sh
+
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs \
+    ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx \
+    ASPNETCORE_Kestrel__Certificates__Default__Password=devcert
+
+EXPOSE 8080
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["dotnet", "Andy.Rbac.Api.dll"]
