@@ -70,6 +70,14 @@ builder.Services.AddAuthentication("Bearer")
         options.Authority = builder.Configuration["Auth:Authority"];
         options.Audience = builder.Configuration["Auth:Audience"];
         options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        if (builder.Environment.IsDevelopment())
+        {
+            options.BackchannelHttpHandler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback =
+                    HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            };
+        }
     })
     .AddMcp(options =>
     {
@@ -246,10 +254,28 @@ using (var scope = app.Services.CreateScope())
     // Seed super-admin permissions for all resource types
     await DataSeeder.SeedSuperAdminPermissionsAsync(db);
 
-    // Seed test user with super-admin role (development only)
+    // Seed dev users with super-admin role (development only)
     if (app.Environment.IsDevelopment())
     {
-        await DataSeeder.SeedTestSubjectAsync(db, "45abdfa0-da00-4bff-9226-9c91fcda15b1", "test@andy.local");
+        // Seed all users from andy-auth by querying its database directly
+        try
+        {
+            using var authConn = new Npgsql.NpgsqlConnection(
+                "Host=host.docker.internal;Port=5435;Database=andy_auth_dev;Username=postgres;Password=postgres");
+            await authConn.OpenAsync();
+            using var cmd = new Npgsql.NpgsqlCommand(
+                "SELECT \"Id\", \"Email\" FROM \"AspNetUsers\" WHERE \"IsActive\" = true", authConn);
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                await DataSeeder.SeedTestSubjectAsync(db, reader.GetString(0), reader.GetString(1));
+            }
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Could not seed from Andy.Auth DB, using fallback");
+            await DataSeeder.SeedTestSubjectAsync(db, "45abdfa0-da00-4bff-9226-9c91fcda15b1", "test@andy.local");
+        }
     }
 }
 

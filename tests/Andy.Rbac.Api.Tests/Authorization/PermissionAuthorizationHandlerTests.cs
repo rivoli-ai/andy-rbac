@@ -52,7 +52,7 @@ public class PermissionAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var requirement = new PermissionRequirement("document:read");
@@ -71,7 +71,7 @@ public class PermissionAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:delete", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:delete", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var requirement = new PermissionRequirement("document:delete");
@@ -90,7 +90,7 @@ public class PermissionAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.HasPermissionAsync("user-123", "other-app:document:read", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasPermissionAsync("user-123", "other-app:document:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var requirement = new PermissionRequirement("other-app:document:read");
@@ -102,7 +102,7 @@ public class PermissionAuthorizationHandlerTests
         // Assert
         context.HasSucceeded.Should().BeTrue();
         _permissionServiceMock.Verify(
-            x => x.HasPermissionAsync("user-123", "other-app:document:read", null, It.IsAny<CancellationToken>()),
+            x => x.HasPermissionAsync("user-123", "other-app:document:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -117,7 +117,7 @@ public class PermissionAuthorizationHandlerTests
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(httpContext);
 
         _permissionServiceMock
-            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", "doc-456", It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var requirement = new PermissionRequirement("document:read", "documentId");
@@ -129,7 +129,7 @@ public class PermissionAuthorizationHandlerTests
         // Assert
         context.HasSucceeded.Should().BeTrue();
         _permissionServiceMock.Verify(
-            x => x.HasPermissionAsync("user-123", "test-app:document:read", "doc-456", It.IsAny<CancellationToken>()),
+            x => x.HasPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -144,7 +144,7 @@ public class PermissionAuthorizationHandlerTests
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(httpContext);
 
         _permissionServiceMock
-            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", "doc-789", It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), "doc-789", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var requirement = new PermissionRequirement("document:read", "documentId");
@@ -167,7 +167,7 @@ public class PermissionAuthorizationHandlerTests
         _httpContextAccessorMock.Setup(x => x.HttpContext).Returns(httpContext);
 
         _permissionServiceMock
-            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var requirement = new PermissionRequirement("document:read", "missingParam");
@@ -198,6 +198,7 @@ public class AnyPermissionAuthorizationHandlerTests
 {
     private readonly Mock<IPermissionService> _permissionServiceMock = new();
     private readonly Mock<ICurrentSubjectAccessor> _subjectAccessorMock = new();
+    private readonly Mock<IHttpContextAccessor> _httpContextAccessorMock = new();
     private readonly Mock<ILogger<AnyPermissionAuthorizationHandler>> _loggerMock = new();
     private readonly RbacOptions _options = new() { ApplicationCode = "test-app" };
     private readonly AnyPermissionAuthorizationHandler _handler;
@@ -207,6 +208,7 @@ public class AnyPermissionAuthorizationHandlerTests
         _handler = new AnyPermissionAuthorizationHandler(
             _permissionServiceMock.Object,
             _subjectAccessorMock.Object,
+            _httpContextAccessorMock.Object,
             Options.Create(_options),
             _loggerMock.Object);
     }
@@ -235,6 +237,7 @@ public class AnyPermissionAuthorizationHandlerTests
             .Setup(x => x.HasAnyPermissionAsync(
                 "user-123",
                 It.Is<IEnumerable<string>>(p => p.Contains("test-app:document:read")),
+                It.IsAny<IEnumerable<string>?>(),
                 null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -255,7 +258,7 @@ public class AnyPermissionAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.HasAnyPermissionAsync("user-123", It.IsAny<IEnumerable<string>>(), null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.HasAnyPermissionAsync("user-123", It.IsAny<IEnumerable<string>>(), It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var requirement = new AnyPermissionRequirement(new[] { "document:delete" });
@@ -286,6 +289,7 @@ public class RoleAuthorizationHandlerTests
 {
     private readonly Mock<IPermissionService> _permissionServiceMock = new();
     private readonly Mock<ICurrentSubjectAccessor> _subjectAccessorMock = new();
+    private readonly Mock<IHttpContextAccessor> _httpContextAccessorMock = new();
     private readonly Mock<ILogger<RoleAuthorizationHandler>> _loggerMock = new();
     private readonly RoleAuthorizationHandler _handler;
 
@@ -294,6 +298,7 @@ public class RoleAuthorizationHandlerTests
         _handler = new RoleAuthorizationHandler(
             _permissionServiceMock.Object,
             _subjectAccessorMock.Object,
+            _httpContextAccessorMock.Object,
             _loggerMock.Object);
     }
 
@@ -318,7 +323,7 @@ public class RoleAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.GetRolesAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "admin", "editor" });
 
         var requirement = new RoleRequirement("admin");
@@ -337,7 +342,7 @@ public class RoleAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.GetRolesAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "viewer" });
 
         var requirement = new RoleRequirement("admin");
@@ -356,7 +361,7 @@ public class RoleAuthorizationHandlerTests
         // Arrange
         _subjectAccessorMock.Setup(x => x.GetSubjectId()).Returns("user-123");
         _permissionServiceMock
-            .Setup(x => x.GetRolesAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "ADMIN" });
 
         var requirement = new RoleRequirement("admin");

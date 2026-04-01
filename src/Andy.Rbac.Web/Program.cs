@@ -26,8 +26,9 @@ builder.Services.AddHttpClient<RbacApiService>(client =>
     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
 
-// Configure authentication with OpenID Connect (same pattern as Andy-Docs)
+// Configure authentication with OpenID Connect
 var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"] ?? "https://localhost:5001";
+var andyAuthBrowserAuthority = andyAuthAuthority.Replace("host.docker.internal", "localhost");
 var clientId = builder.Configuration["AndyAuth:ClientId"] ?? "andy-rbac-web";
 var clientSecret = builder.Configuration["AndyAuth:ClientSecret"];
 
@@ -50,11 +51,22 @@ builder.Services.AddAuthentication(options =>
 {
     options.Authority = andyAuthAuthority;
     options.ClientId = clientId;
-    options.ClientSecret = clientSecret;
+    // Public client — no secret, use PKCE
     options.ResponseType = OpenIdConnectResponseType.Code;
+    options.UsePkce = true;
     options.SaveTokens = true;
     options.GetClaimsFromUserInfoEndpoint = true;
     options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+
+
+    if (builder.Environment.IsDevelopment())
+    {
+        options.BackchannelHttpHandler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback =
+                HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+    }
 
     // Scopes
     options.Scope.Clear();
@@ -72,15 +84,36 @@ builder.Services.AddAuthentication(options =>
     options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
     {
         NameClaimType = "name",
-        RoleClaimType = "role"
+        RoleClaimType = "role",
+        ValidIssuers = new[]
+        {
+            andyAuthAuthority, andyAuthAuthority.TrimEnd('/') + "/",
+            andyAuthBrowserAuthority, andyAuthBrowserAuthority.TrimEnd('/') + "/"
+        }.Distinct().ToArray()
     };
 
     // Handle events
     options.Events = new OpenIdConnectEvents
     {
+        // Browser redirects must use localhost, not host.docker.internal
+        OnRedirectToIdentityProvider = context =>
+        {
+            context.ProtocolMessage.IssuerAddress =
+                context.ProtocolMessage.IssuerAddress.Replace("host.docker.internal", "localhost");
+            return Task.CompletedTask;
+        },
+        OnRedirectToIdentityProviderForSignOut = context =>
+        {
+            context.ProtocolMessage.IssuerAddress =
+                context.ProtocolMessage.IssuerAddress.Replace("host.docker.internal", "localhost");
+            return Task.CompletedTask;
+        },
         OnRemoteFailure = context =>
         {
-            context.Response.Redirect("/");
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("OIDC");
+            logger.LogError(context.Failure, "OIDC remote failure: {Error}", context.Failure?.Message);
+            context.Response.Redirect("/?error=" + Uri.EscapeDataString(context.Failure?.Message ?? "unknown"));
             context.HandleResponse();
             return Task.CompletedTask;
         }
@@ -132,3 +165,34 @@ app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
 app.Run();
+
+/// <summary>
+/// Rewrites outgoing HTTP requests from one hostname to another,
+/// allowing localhost:5001 URLs to be routed to host.docker.internal:5001 inside Docker.
+/// </summary>
+internal class HostRewriteHandler : DelegatingHandler
+{
+    private readonly string _from;
+    private readonly string _to;
+
+    public HostRewriteHandler(string fromHost, string toHost)
+    {
+        _from = fromHost;
+        _to = toHost;
+        InnerHandler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback =
+                HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        };
+    }
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        if (request.RequestUri?.Host == _from)
+        {
+            var builder = new UriBuilder(request.RequestUri) { Host = _to };
+            request.RequestUri = builder.Uri;
+        }
+        return base.SendAsync(request, ct);
+    }
+}

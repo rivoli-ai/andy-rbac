@@ -18,9 +18,11 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         CheckPermissionRequest request,
         ServerCallContext context)
     {
+        // TODO: Add groups support to gRPC protocol
         var result = await _evaluator.CheckPermissionAsync(
             request.SubjectId,
             request.Permission,
+            groups: null,
             request.HasResourceInstanceId ? request.ResourceInstanceId : null,
             context.CancellationToken);
 
@@ -35,9 +37,11 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         CheckAnyPermissionRequest request,
         ServerCallContext context)
     {
+        // TODO: Add groups support to gRPC protocol
         var result = await _evaluator.CheckAnyPermissionAsync(
             request.SubjectId,
             request.Permissions,
+            groups: null,
             request.HasResourceInstanceId ? request.ResourceInstanceId : null,
             context.CancellationToken);
 
@@ -52,8 +56,10 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         GetPermissionsRequest request,
         ServerCallContext context)
     {
+        // TODO: Add groups support to gRPC protocol
         var permissions = await _evaluator.GetPermissionsAsync(
             request.SubjectId,
+            groups: null,
             request.HasApplicationCode ? request.ApplicationCode : null,
             context.CancellationToken);
 
@@ -66,8 +72,10 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         GetRolesRequest request,
         ServerCallContext context)
     {
+        // TODO: Add groups support to gRPC protocol
         var roles = await _evaluator.GetRolesAsync(
             request.SubjectId,
+            groups: null,
             request.HasApplicationCode ? request.ApplicationCode : null,
             context.CancellationToken);
 

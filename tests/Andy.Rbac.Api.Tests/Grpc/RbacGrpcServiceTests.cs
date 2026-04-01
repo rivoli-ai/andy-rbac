@@ -29,7 +29,7 @@ public class RbacGrpcServiceTests
     {
         // Arrange
         _evaluatorMock
-            .Setup(x => x.CheckPermissionAsync("user-123", "test-app:document:read", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(true, null));
 
         var request = new CheckPermissionReq
@@ -51,7 +51,7 @@ public class RbacGrpcServiceTests
     {
         // Arrange
         _evaluatorMock
-            .Setup(x => x.CheckPermissionAsync("user-123", "test-app:document:delete", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckPermissionAsync("user-123", "test-app:document:delete", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(false, "Permission denied"));
 
         var request = new CheckPermissionReq
@@ -73,7 +73,7 @@ public class RbacGrpcServiceTests
     {
         // Arrange
         _evaluatorMock
-            .Setup(x => x.CheckPermissionAsync("user-123", "test-app:document:read", "doc-456", It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(true, null));
 
         var request = new CheckPermissionReq
@@ -89,7 +89,7 @@ public class RbacGrpcServiceTests
         // Assert
         response.Allowed.Should().BeTrue();
         _evaluatorMock.Verify(
-            x => x.CheckPermissionAsync("user-123", "test-app:document:read", "doc-456", It.IsAny<CancellationToken>()),
+            x => x.CheckPermissionAsync("user-123", "test-app:document:read", It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -99,7 +99,7 @@ public class RbacGrpcServiceTests
         // Arrange
         var permissions = new[] { "test-app:document:read", "test-app:document:write" };
         _evaluatorMock
-            .Setup(x => x.CheckAnyPermissionAsync("user-123", permissions, null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckAnyPermissionAsync("user-123", It.Is<IEnumerable<string>>(p => p.SequenceEqual(permissions)), It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(true, null));
 
         var request = new CheckAnyPermissionReq
@@ -121,7 +121,7 @@ public class RbacGrpcServiceTests
         // Arrange
         var permissions = new[] { "test-app:document:delete" };
         _evaluatorMock
-            .Setup(x => x.CheckAnyPermissionAsync("user-123", permissions, null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckAnyPermissionAsync("user-123", It.IsAny<IEnumerable<string>>(), It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(false, "None of the required permissions found"));
 
         var request = new CheckAnyPermissionReq
@@ -144,7 +144,7 @@ public class RbacGrpcServiceTests
         // Arrange
         var permissions = new[] { "test-app:document:read" };
         _evaluatorMock
-            .Setup(x => x.CheckAnyPermissionAsync("user-123", permissions, "doc-456", It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckAnyPermissionAsync("user-123", It.IsAny<IEnumerable<string>>(), It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(true, null));
 
         var request = new CheckAnyPermissionReq
@@ -160,7 +160,7 @@ public class RbacGrpcServiceTests
         // Assert
         response.Allowed.Should().BeTrue();
         _evaluatorMock.Verify(
-            x => x.CheckAnyPermissionAsync("user-123", permissions, "doc-456", It.IsAny<CancellationToken>()),
+            x => x.CheckAnyPermissionAsync("user-123", It.IsAny<IEnumerable<string>>(), It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -174,7 +174,7 @@ public class RbacGrpcServiceTests
             "test-app:document:write"
         };
         _evaluatorMock
-            .Setup(x => x.GetPermissionsAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(permissions);
 
         var request = new GetPermissionsReq
@@ -197,7 +197,7 @@ public class RbacGrpcServiceTests
         // Arrange
         var permissions = new List<string> { "test-app:document:read" };
         _evaluatorMock
-            .Setup(x => x.GetPermissionsAsync("user-123", "test-app", It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), "test-app", It.IsAny<CancellationToken>()))
             .ReturnsAsync(permissions);
 
         var request = new GetPermissionsReq
@@ -212,7 +212,7 @@ public class RbacGrpcServiceTests
         // Assert
         response.Permissions.Should().ContainSingle();
         _evaluatorMock.Verify(
-            x => x.GetPermissionsAsync("user-123", "test-app", It.IsAny<CancellationToken>()),
+            x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), "test-app", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -221,7 +221,7 @@ public class RbacGrpcServiceTests
     {
         // Arrange
         _evaluatorMock
-            .Setup(x => x.GetPermissionsAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string>());
 
         var request = new GetPermissionsReq
@@ -242,7 +242,7 @@ public class RbacGrpcServiceTests
         // Arrange
         var roles = new List<string> { "admin", "editor" };
         _evaluatorMock
-            .Setup(x => x.GetRolesAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(roles);
 
         var request = new GetRolesReq
@@ -265,7 +265,7 @@ public class RbacGrpcServiceTests
         // Arrange
         var roles = new List<string> { "admin" };
         _evaluatorMock
-            .Setup(x => x.GetRolesAsync("user-123", "test-app", It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), "test-app", It.IsAny<CancellationToken>()))
             .ReturnsAsync(roles);
 
         var request = new GetRolesReq
@@ -280,7 +280,7 @@ public class RbacGrpcServiceTests
         // Assert
         response.Roles.Should().ContainSingle();
         _evaluatorMock.Verify(
-            x => x.GetRolesAsync("user-123", "test-app", It.IsAny<CancellationToken>()),
+            x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), "test-app", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -289,7 +289,7 @@ public class RbacGrpcServiceTests
     {
         // Arrange
         _evaluatorMock
-            .Setup(x => x.GetRolesAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string>());
 
         var request = new GetRolesReq

@@ -42,9 +42,11 @@ public class RbacMcpTools
     public async Task<McpPermissionCheckResult> CheckPermission(
         [Description("External ID of the user (e.g., OAuth sub claim)")] string subjectId,
         [Description("Permission code (e.g., 'andy-docs:document:read')")] string permission,
+        [Description("Optional comma-separated group codes from token")] string? groups = null,
         [Description("Optional resource instance ID for instance-level checks")] string? resourceInstanceId = null)
     {
-        var result = await _evaluator.CheckPermissionAsync(subjectId, permission, resourceInstanceId);
+        var groupList = string.IsNullOrEmpty(groups) ? null : groups.Split(',').Select(g => g.Trim()).ToList();
+        var result = await _evaluator.CheckPermissionAsync(subjectId, permission, groupList, resourceInstanceId);
         return new McpPermissionCheckResult(result.Allowed, result.Reason ?? (result.Allowed ? "Permission granted" : "Permission denied"));
     }
 
@@ -52,9 +54,11 @@ public class RbacMcpTools
     [Description("Get all permissions for a user, optionally filtered by application.")]
     public async Task<List<string>> GetUserPermissions(
         [Description("External ID of the user")] string subjectId,
+        [Description("Optional comma-separated group codes from token")] string? groups = null,
         [Description("Optional application code to filter (e.g., 'andy-docs')")] string? applicationCode = null)
     {
-        var permissions = await _evaluator.GetPermissionsAsync(subjectId, applicationCode);
+        var groupList = string.IsNullOrEmpty(groups) ? null : groups.Split(',').Select(g => g.Trim()).ToList();
+        var permissions = await _evaluator.GetPermissionsAsync(subjectId, groupList, applicationCode);
         return permissions.ToList();
     }
 
@@ -62,9 +66,11 @@ public class RbacMcpTools
     [Description("Get all roles assigned to a user, optionally filtered by application.")]
     public async Task<List<string>> GetUserRoles(
         [Description("External ID of the user")] string subjectId,
+        [Description("Optional comma-separated group codes from token")] string? groups = null,
         [Description("Optional application code to filter")] string? applicationCode = null)
     {
-        var roles = await _evaluator.GetRolesAsync(subjectId, applicationCode);
+        var groupList = string.IsNullOrEmpty(groups) ? null : groups.Split(',').Select(g => g.Trim()).ToList();
+        var roles = await _evaluator.GetRolesAsync(subjectId, groupList, applicationCode);
         return roles.ToList();
     }
 

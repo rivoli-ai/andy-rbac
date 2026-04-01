@@ -1,0 +1,137 @@
+@page "/subjects/{Id:guid}"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
+@inject NavigationManager Navigation
+
+<PageTitle>@(_subject?.DisplayName ?? _subject?.ExternalId ?? "Subject") - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <div class="d-flex align-center gap-2 mb-3">
+                <a href="/subjects" class="btn btn-secondary btn-sm">Back to Subjects</a>
+            </div>
+            <h1>@(_subject?.DisplayName ?? _subject?.ExternalId ?? "Loading...")</h1>
+            <p class="subtitle">@(_subject?.Email ?? "Subject details and role assignments")</p>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="loading">
+        <div class="spinner"></div>
+    </div>
+}
+else if (_subject != null)
+{
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon primary">E</div>
+            <div class="stat-content">
+                <div class="stat-label">External ID</div>
+                <div class="stat-value" style="font-size: 1.25rem;"><code>@_subject.ExternalId</code></div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon info">P</div>
+            <div class="stat-content">
+                <div class="stat-label">Provider</div>
+                <div class="stat-value" style="font-size: 1.25rem;"><code>@_subject.Provider</code></div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon @(_subject.IsActive ? "success" : "warning")">S</div>
+            <div class="stat-content">
+                <div class="stat-label">Status</div>
+                <div class="stat-value" style="font-size: 1.25rem;">@(_subject.IsActive ? "Active" : "Inactive")</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon info">T</div>
+            <div class="stat-content">
+                <div class="stat-label">Type</div>
+                <div class="stat-value" style="font-size: 1.25rem;">@(_subject.Type ?? "user")</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Subject Information</h3>
+        </div>
+        @if (!string.IsNullOrEmpty(_subject.DisplayName))
+        {
+            <div class="form-group">
+                <label class="form-label">Display Name</label>
+                <p>@_subject.DisplayName</p>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_subject.Email))
+        {
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <p>@_subject.Email</p>
+            </div>
+        }
+        <div class="form-group">
+            <label class="form-label">Created</label>
+            <p>@_subject.CreatedAt.ToLocalTime().ToString("f")</p>
+        </div>
+        @if (_subject.LastSeenAt.HasValue)
+        {
+            <div class="form-group">
+                <label class="form-label">Last Seen</label>
+                <p>@_subject.LastSeenAt.Value.ToLocalTime().ToString("f")</p>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private string? _error;
+    private SubjectDto? _subject;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubject();
+    }
+
+    private async Task LoadSubject()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var result = await ApiService.GetSubjectsAsync(null, 0, 1000);
+            _subject = result.Items.FirstOrDefault(s => s.Id == Id);
+
+            if (_subject == null)
+            {
+                _error = $"Subject not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load subject: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}
