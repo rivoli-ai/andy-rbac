@@ -45,10 +45,12 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
 
         var permission = NormalizePermission(requirement.Permission);
         var resourceInstanceId = GetResourceInstanceId(requirement.ResourceIdParameter);
+        var groups = GetGroupsFromClaims();
 
         var hasPermission = await _permissionService.HasPermissionAsync(
             subjectId,
             permission,
+            groups,
             resourceInstanceId);
 
         if (hasPermission)
@@ -64,6 +66,16 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
                 "Permission denied: {SubjectId} lacks {Permission} on {ResourceInstanceId}",
                 subjectId, permission, resourceInstanceId ?? "(global)");
         }
+    }
+
+    private IEnumerable<string>? GetGroupsFromClaims()
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User == null)
+            return null;
+
+        var groups = httpContext.User.FindAll("groups").Select(c => c.Value).ToList();
+        return groups.Any() ? groups : null;
     }
 
     private string NormalizePermission(string permission)
@@ -108,17 +120,20 @@ public class AnyPermissionAuthorizationHandler : AuthorizationHandler<AnyPermiss
 {
     private readonly IPermissionService _permissionService;
     private readonly ICurrentSubjectAccessor _subjectAccessor;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly RbacOptions _options;
     private readonly ILogger<AnyPermissionAuthorizationHandler> _logger;
 
     public AnyPermissionAuthorizationHandler(
         IPermissionService permissionService,
         ICurrentSubjectAccessor subjectAccessor,
+        IHttpContextAccessor httpContextAccessor,
         IOptions<RbacOptions> options,
         ILogger<AnyPermissionAuthorizationHandler> logger)
     {
         _permissionService = permissionService;
         _subjectAccessor = subjectAccessor;
+        _httpContextAccessor = httpContextAccessor;
         _options = options.Value;
         _logger = logger;
     }
@@ -135,12 +150,23 @@ public class AnyPermissionAuthorizationHandler : AuthorizationHandler<AnyPermiss
             .Select(p => NormalizePermission(p))
             .ToList();
 
-        var hasAny = await _permissionService.HasAnyPermissionAsync(subjectId, permissions);
+        var groups = GetGroupsFromClaims();
+        var hasAny = await _permissionService.HasAnyPermissionAsync(subjectId, permissions, groups);
 
         if (hasAny)
         {
             context.Succeed(requirement);
         }
+    }
+
+    private IEnumerable<string>? GetGroupsFromClaims()
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User == null)
+            return null;
+
+        var groups = httpContext.User.FindAll("groups").Select(c => c.Value).ToList();
+        return groups.Any() ? groups : null;
     }
 
     private string NormalizePermission(string permission)
@@ -160,15 +186,18 @@ public class RoleAuthorizationHandler : AuthorizationHandler<RoleRequirement>
 {
     private readonly IPermissionService _permissionService;
     private readonly ICurrentSubjectAccessor _subjectAccessor;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<RoleAuthorizationHandler> _logger;
 
     public RoleAuthorizationHandler(
         IPermissionService permissionService,
         ICurrentSubjectAccessor subjectAccessor,
+        IHttpContextAccessor httpContextAccessor,
         ILogger<RoleAuthorizationHandler> logger)
     {
         _permissionService = permissionService;
         _subjectAccessor = subjectAccessor;
+        _httpContextAccessor = httpContextAccessor;
         _logger = logger;
     }
 
@@ -180,11 +209,22 @@ public class RoleAuthorizationHandler : AuthorizationHandler<RoleRequirement>
         if (string.IsNullOrEmpty(subjectId))
             return;
 
-        var roles = await _permissionService.GetRolesAsync(subjectId);
+        var groups = GetGroupsFromClaims();
+        var roles = await _permissionService.GetRolesAsync(subjectId, groups);
 
         if (roles.Contains(requirement.Role, StringComparer.OrdinalIgnoreCase))
         {
             context.Succeed(requirement);
         }
+    }
+
+    private IEnumerable<string>? GetGroupsFromClaims()
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User == null)
+            return null;
+
+        var groups = httpContext.User.FindAll("groups").Select(c => c.Value).ToList();
+        return groups.Any() ? groups : null;
     }
 }

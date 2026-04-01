@@ -110,7 +110,7 @@ public class PermissionEvaluatorTests
             .ReturnsAsync(true);
 
         // Act
-        var result = await evaluator.CheckPermissionAsync("admin-user", "document:read", instanceId);
+        var result = await evaluator.CheckPermissionAsync("admin-user", "document:read", groups: null, resourceInstanceId: instanceId);
 
         // Assert
         result.Allowed.Should().BeTrue();
@@ -216,7 +216,7 @@ public class PermissionEvaluatorTests
             .ReturnsAsync(["document:read"]);
 
         // Act
-        var result = await evaluator.GetPermissionsAsync("admin-user", "test-app");
+        var result = await evaluator.GetPermissionsAsync("admin-user", groups: null, applicationCode: "test-app");
 
         // Assert
         _permissionRepoMock.Verify(
@@ -325,7 +325,7 @@ public class PermissionEvaluatorTests
             .ReturnsAsync(["admin"]);
 
         // Act
-        var result = await evaluator.GetRolesAsync("admin-user", "test-app");
+        var result = await evaluator.GetRolesAsync("admin-user", groups: null, applicationCode: "test-app");
 
         // Assert
         _permissionRepoMock.Verify(

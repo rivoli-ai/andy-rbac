@@ -1,0 +1,134 @@
+@page "/teams/{Code}"
+@using Andy.Rbac.Web.Services
+@inject RbacApiService ApiService
+@inject NavigationManager Navigation
+
+<PageTitle>@(_team?.Name ?? "Team") - Andy RBAC</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-actions">
+        <div>
+            <div class="d-flex align-center gap-2 mb-3">
+                <a href="/teams" class="btn btn-secondary btn-sm">Back to Teams</a>
+            </div>
+            <h1>@(_team?.Name ?? "Loading...")</h1>
+            <p class="subtitle">@(_team?.Description ?? "Team details and members")</p>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="card" style="background: rgba(220,53,69,0.1); border-color: var(--danger); margin-bottom: 1rem;">
+        <p style="color: var(--danger); margin: 0;">@_error</p>
+    </div>
+}
+
+@if (_loading)
+{
+    <div class="loading">
+        <div class="spinner"></div>
+    </div>
+}
+else if (_team != null)
+{
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon primary">C</div>
+            <div class="stat-content">
+                <div class="stat-label">Code</div>
+                <div class="stat-value" style="font-size: 1.25rem;"><code>@_team.Code</code></div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon info">M</div>
+            <div class="stat-content">
+                <div class="stat-label">Members</div>
+                <div class="stat-value" style="font-size: 1.25rem;">@_team.MemberCount</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon @(_team.IsActive ? "success" : "warning")">S</div>
+            <div class="stat-content">
+                <div class="stat-label">Status</div>
+                <div class="stat-value" style="font-size: 1.25rem;">@(_team.IsActive ? "Active" : "Inactive")</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon info">A</div>
+            <div class="stat-content">
+                <div class="stat-label">Application</div>
+                <div class="stat-value" style="font-size: 1.25rem;"><code>@(_team.ApplicationCode ?? "global")</code></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Team Information</h3>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Name</label>
+            <p>@_team.Name</p>
+        </div>
+        @if (!string.IsNullOrEmpty(_team.Description))
+        {
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <p>@_team.Description</p>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_team.ParentTeamCode))
+        {
+            <div class="form-group">
+                <label class="form-label">Parent Team</label>
+                <p><a href="/teams/@_team.ParentTeamCode">@_team.ParentTeamCode</a></p>
+            </div>
+        }
+        <div class="form-group">
+            <label class="form-label">Created</label>
+            <p>@_team.CreatedAt.ToLocalTime().ToString("f")</p>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string Code { get; set; } = "";
+
+    private bool _loading = true;
+    private string? _error;
+    private TeamDto? _team;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTeam();
+    }
+
+    private async Task LoadTeam()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var teams = await ApiService.GetTeamsAsync(null);
+            _team = teams.FirstOrDefault(t => t.Code.Equals(Code, StringComparison.OrdinalIgnoreCase));
+
+            if (_team == null)
+            {
+                _error = $"Team not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load team: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

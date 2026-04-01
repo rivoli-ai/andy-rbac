@@ -31,11 +31,12 @@ public class RbacHttpClient : IRbacClient
     public async Task<bool> HasPermissionAsync(
         string subjectId,
         string permission,
+        IEnumerable<string>? groups = null,
         string? resourceInstanceId = null,
         CancellationToken ct = default)
     {
-        // Check cache first
-        if (_options.Cache.Enabled && resourceInstanceId == null)
+        // Check cache first (only for simple cases without groups)
+        if (_options.Cache.Enabled && resourceInstanceId == null && groups == null)
         {
             var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, ct);
             if (cachedPermissions != null)
@@ -46,7 +47,13 @@ public class RbacHttpClient : IRbacClient
         }
 
         // Call API
-        var request = new { SubjectId = subjectId, Permission = NormalizePermission(permission), ResourceInstanceId = resourceInstanceId };
+        var request = new
+        {
+            SubjectId = subjectId,
+            Permission = NormalizePermission(permission),
+            Groups = groups?.ToList(),
+            ResourceInstanceId = resourceInstanceId
+        };
         var response = await _httpClient.PostAsJsonAsync("api/check", request, ct);
         response.EnsureSuccessStatusCode();
 
@@ -57,13 +64,14 @@ public class RbacHttpClient : IRbacClient
     public async Task<bool> HasAnyPermissionAsync(
         string subjectId,
         IEnumerable<string> permissions,
+        IEnumerable<string>? groups = null,
         string? resourceInstanceId = null,
         CancellationToken ct = default)
     {
         var normalizedPermissions = permissions.Select(NormalizePermission).ToList();
 
-        // Check cache first
-        if (_options.Cache.Enabled && resourceInstanceId == null)
+        // Check cache first (only for simple cases without groups)
+        if (_options.Cache.Enabled && resourceInstanceId == null && groups == null)
         {
             var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, ct);
             if (cachedPermissions != null)
@@ -72,7 +80,13 @@ public class RbacHttpClient : IRbacClient
             }
         }
 
-        var request = new { SubjectId = subjectId, Permissions = normalizedPermissions, ResourceInstanceId = resourceInstanceId };
+        var request = new
+        {
+            SubjectId = subjectId,
+            Permissions = normalizedPermissions,
+            Groups = groups?.ToList(),
+            ResourceInstanceId = resourceInstanceId
+        };
         var response = await _httpClient.PostAsJsonAsync("api/check/any", request, ct);
         response.EnsureSuccessStatusCode();
 
@@ -83,13 +97,14 @@ public class RbacHttpClient : IRbacClient
     public async Task<bool> HasAllPermissionsAsync(
         string subjectId,
         IEnumerable<string> permissions,
+        IEnumerable<string>? groups = null,
         string? resourceInstanceId = null,
         CancellationToken ct = default)
     {
         var normalizedPermissions = permissions.Select(NormalizePermission).ToList();
 
-        // Check cache first
-        if (_options.Cache.Enabled && resourceInstanceId == null)
+        // Check cache first (only for simple cases without groups)
+        if (_options.Cache.Enabled && resourceInstanceId == null && groups == null)
         {
             var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, ct);
             if (cachedPermissions != null)
@@ -101,7 +116,7 @@ public class RbacHttpClient : IRbacClient
         // No bulk "all" endpoint, check each
         foreach (var permission in normalizedPermissions)
         {
-            if (!await HasPermissionAsync(subjectId, permission, resourceInstanceId, ct))
+            if (!await HasPermissionAsync(subjectId, permission, groups, resourceInstanceId, ct))
                 return false;
         }
         return true;
@@ -109,11 +124,12 @@ public class RbacHttpClient : IRbacClient
 
     public async Task<IReadOnlyList<string>> GetPermissionsAsync(
         string subjectId,
+        IEnumerable<string>? groups = null,
         string? applicationCode = null,
         CancellationToken ct = default)
     {
-        // Check cache
-        if (_options.Cache.Enabled && applicationCode == null)
+        // Check cache (only for simple cases without groups)
+        if (_options.Cache.Enabled && applicationCode == null && groups == null)
         {
             var cached = await _cache.GetPermissionsAsync(subjectId, ct);
             if (cached != null)
@@ -121,8 +137,13 @@ public class RbacHttpClient : IRbacClient
         }
 
         var url = $"api/check/permissions/{Uri.EscapeDataString(subjectId)}";
+        var queryParams = new List<string>();
+        if (groups != null && groups.Any())
+            queryParams.Add($"groups={Uri.EscapeDataString(string.Join(",", groups))}");
         if (!string.IsNullOrEmpty(applicationCode))
-            url += $"?applicationCode={Uri.EscapeDataString(applicationCode)}";
+            queryParams.Add($"applicationCode={Uri.EscapeDataString(applicationCode)}");
+        if (queryParams.Any())
+            url += "?" + string.Join("&", queryParams);
 
         var response = await _httpClient.GetAsync(url, ct);
         response.EnsureSuccessStatusCode();
@@ -130,8 +151,8 @@ public class RbacHttpClient : IRbacClient
         var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>(ct);
         var permissions = result?.Permissions ?? [];
 
-        // Cache results
-        if (_options.Cache.Enabled && applicationCode == null)
+        // Cache results (only for simple cases without groups)
+        if (_options.Cache.Enabled && applicationCode == null && groups == null)
         {
             await _cache.SetPermissionsAsync(subjectId, permissions, ct);
         }
@@ -141,11 +162,12 @@ public class RbacHttpClient : IRbacClient
 
     public async Task<IReadOnlyList<string>> GetRolesAsync(
         string subjectId,
+        IEnumerable<string>? groups = null,
         string? applicationCode = null,
         CancellationToken ct = default)
     {
-        // Check cache
-        if (_options.Cache.Enabled && applicationCode == null)
+        // Check cache (only for simple cases without groups)
+        if (_options.Cache.Enabled && applicationCode == null && groups == null)
         {
             var cached = await _cache.GetRolesAsync(subjectId, ct);
             if (cached != null)
@@ -153,8 +175,13 @@ public class RbacHttpClient : IRbacClient
         }
 
         var url = $"api/check/roles/{Uri.EscapeDataString(subjectId)}";
+        var queryParams = new List<string>();
+        if (groups != null && groups.Any())
+            queryParams.Add($"groups={Uri.EscapeDataString(string.Join(",", groups))}");
         if (!string.IsNullOrEmpty(applicationCode))
-            url += $"?applicationCode={Uri.EscapeDataString(applicationCode)}";
+            queryParams.Add($"applicationCode={Uri.EscapeDataString(applicationCode)}");
+        if (queryParams.Any())
+            url += "?" + string.Join("&", queryParams);
 
         var response = await _httpClient.GetAsync(url, ct);
         response.EnsureSuccessStatusCode();
@@ -162,8 +189,8 @@ public class RbacHttpClient : IRbacClient
         var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>(ct);
         var roles = result?.Roles ?? [];
 
-        // Cache results
-        if (_options.Cache.Enabled && applicationCode == null)
+        // Cache results (only for simple cases without groups)
+        if (_options.Cache.Enabled && applicationCode == null && groups == null)
         {
             await _cache.SetRolesAsync(subjectId, roles, ct);
         }

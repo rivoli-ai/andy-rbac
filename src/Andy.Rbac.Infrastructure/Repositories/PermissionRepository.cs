@@ -174,4 +174,66 @@ public class PermissionRepository : IPermissionRepository
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<string>> GetPermissionsForRolesAsync(
+        IEnumerable<Guid> roleIds,
+        string? applicationCode = null,
+        CancellationToken ct = default)
+    {
+        var roleIdList = roleIds.ToList();
+        if (!roleIdList.Any())
+            return [];
+
+        var query = _db.RolePermissions
+            .Where(rp => roleIdList.Contains(rp.RoleId) ||
+                        (rp.Role.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRoleId.Value)) ||
+                        (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+            .Include(rp => rp.Permission)
+            .ThenInclude(p => p.ResourceType)
+            .ThenInclude(rt => rt.Application)
+            .Include(rp => rp.Permission)
+            .ThenInclude(p => p.Action)
+            .Select(rp => rp.Permission);
+
+        if (!string.IsNullOrEmpty(applicationCode))
+        {
+            query = query.Where(p => p.ResourceType.Application != null && p.ResourceType.Application.Code == applicationCode);
+        }
+
+        var permissions = await query
+            .Select(p => p.ResourceType.Application!.Code + ":" + p.ResourceType.Code + ":" + p.Action.Code)
+            .Distinct()
+            .ToListAsync(ct);
+
+        return permissions;
+    }
+
+    public async Task<bool> HasPermissionForRolesAsync(
+        IEnumerable<Guid> roleIds,
+        string permissionCode,
+        string? resourceInstanceId = null,
+        CancellationToken ct = default)
+    {
+        var roleIdList = roleIds.ToList();
+        if (!roleIdList.Any())
+            return false;
+
+        var parts = permissionCode.Split(':');
+        if (parts.Length != 3)
+            return false;
+
+        var appCode = parts[0];
+        var resourceCode = parts[1];
+        var actionCode = parts[2];
+
+        // Check role-based permissions (including parent roles)
+        return await _db.RolePermissions
+            .Where(rp => roleIdList.Contains(rp.RoleId) ||
+                        (rp.Role.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRoleId.Value)) ||
+                        (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+            .AnyAsync(rp =>
+                rp.Permission.ResourceType.Application != null &&
+                rp.Permission.ResourceType.Application.Code == appCode &&
+                rp.Permission.ResourceType.Code == resourceCode &&
+                rp.Permission.Action.Code == actionCode, ct);
+    }
 }

@@ -338,6 +338,10 @@ public static class DataSeeder
         {
             new ResourceType { ApplicationId = app.Id, Code = "container", Name = "Container", SupportsInstances = true },
             new ResourceType { ApplicationId = app.Id, Code = "image", Name = "Image", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "template", Name = "Template", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "workspace", Name = "Workspace", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "provider", Name = "Provider", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
         };
 
         foreach (var rt in resourceTypes)

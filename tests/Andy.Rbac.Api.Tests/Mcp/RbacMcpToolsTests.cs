@@ -36,7 +36,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _evaluatorMock
-            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:read", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(true));
 
         // Act
@@ -53,7 +53,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _evaluatorMock
-            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:delete", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:delete", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(false, "Permission denied"));
 
         // Act
@@ -70,16 +70,16 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _evaluatorMock
-            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:read", "doc-456", It.IsAny<CancellationToken>()))
+            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:read", It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PermissionCheckResult(true));
 
         // Act
-        var result = await tools.CheckPermission("user-123", "app:doc:read", "doc-456");
+        var result = await tools.CheckPermission("user-123", "app:doc:read", resourceInstanceId: "doc-456");
 
         // Assert
         result.Allowed.Should().BeTrue();
         _evaluatorMock.Verify(
-            x => x.CheckPermissionAsync("user-123", "app:doc:read", "doc-456", It.IsAny<CancellationToken>()),
+            x => x.CheckPermissionAsync("user-123", "app:doc:read", It.IsAny<IEnumerable<string>?>(), "doc-456", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -90,7 +90,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         var expectedPermissions = new List<string> { "app:doc:read", "app:doc:write" };
         _evaluatorMock
-            .Setup(x => x.GetPermissionsAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedPermissions);
 
         // Act
@@ -106,15 +106,15 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _evaluatorMock
-            .Setup(x => x.GetPermissionsAsync("user-123", "my-app", It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), "my-app", It.IsAny<CancellationToken>()))
             .ReturnsAsync(["my-app:doc:read"]);
 
         // Act
-        var result = await tools.GetUserPermissions("user-123", "my-app");
+        var result = await tools.GetUserPermissions("user-123", applicationCode: "my-app");
 
         // Assert
         _evaluatorMock.Verify(
-            x => x.GetPermissionsAsync("user-123", "my-app", It.IsAny<CancellationToken>()),
+            x => x.GetPermissionsAsync("user-123", It.IsAny<IEnumerable<string>?>(), "my-app", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -125,7 +125,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         var expectedRoles = new List<string> { "admin", "editor" };
         _evaluatorMock
-            .Setup(x => x.GetRolesAsync("user-123", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GetRolesAsync("user-123", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedRoles);
 
         // Act

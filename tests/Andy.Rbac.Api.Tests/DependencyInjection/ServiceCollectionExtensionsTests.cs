@@ -248,19 +248,19 @@ public class ServiceCollectionExtensionsTests
 
     private class MockPermissionService : IPermissionService
     {
-        public Task<bool> HasPermissionAsync(string subjectId, string permission, string? resourceInstanceId = null, CancellationToken ct = default)
+        public Task<bool> HasPermissionAsync(string subjectId, string permission, IEnumerable<string>? groups = null, string? resourceInstanceId = null, CancellationToken ct = default)
             => Task.FromResult(false);
 
-        public Task<bool> HasAnyPermissionAsync(string subjectId, IEnumerable<string> permissions, string? resourceInstanceId = null, CancellationToken ct = default)
+        public Task<bool> HasAnyPermissionAsync(string subjectId, IEnumerable<string> permissions, IEnumerable<string>? groups = null, string? resourceInstanceId = null, CancellationToken ct = default)
             => Task.FromResult(false);
 
-        public Task<bool> HasAllPermissionsAsync(string subjectId, IEnumerable<string> permissions, string? resourceInstanceId = null, CancellationToken ct = default)
+        public Task<bool> HasAllPermissionsAsync(string subjectId, IEnumerable<string> permissions, IEnumerable<string>? groups = null, string? resourceInstanceId = null, CancellationToken ct = default)
             => Task.FromResult(false);
 
-        public Task<IReadOnlyList<string>> GetPermissionsAsync(string subjectId, string? applicationCode = null, CancellationToken ct = default)
+        public Task<IReadOnlyList<string>> GetPermissionsAsync(string subjectId, IEnumerable<string>? groups = null, string? applicationCode = null, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 
-        public Task<IReadOnlyList<string>> GetRolesAsync(string subjectId, string? applicationCode = null, CancellationToken ct = default)
+        public Task<IReadOnlyList<string>> GetRolesAsync(string subjectId, IEnumerable<string>? groups = null, string? applicationCode = null, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     }
 

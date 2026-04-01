@@ -39,4 +39,22 @@ public interface IPermissionRepository
         Guid subjectId,
         Guid resourceInstanceId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets all permissions for a set of roles (by role ID).
+    /// Used for checking group permissions via ExternalGroupMapping.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetPermissionsForRolesAsync(
+        IEnumerable<Guid> roleIds,
+        string? applicationCode = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Checks if any of the given roles has the specified permission.
+    /// </summary>
+    Task<bool> HasPermissionForRolesAsync(
+        IEnumerable<Guid> roleIds,
+        string permissionCode,
+        string? resourceInstanceId = null,
+        CancellationToken ct = default);
 }
