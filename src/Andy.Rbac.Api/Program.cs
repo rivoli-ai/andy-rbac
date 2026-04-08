@@ -32,8 +32,19 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddGrpc();
 
 // Add database
+//
+// Provider switch (PostgreSQL for Docker / hosted, SQLite for embedded
+// Conductor): the active provider is selected by the `Database:Provider`
+// configuration key. `appsettings.json` pins it to PostgreSql so the
+// historic deployment paths are unchanged; Conductor's embedded launcher
+// overrides it via the `Database__Provider=Sqlite` env var.
+var dbProvider = DatabaseProviderExtensions.GetDatabaseProvider(builder.Configuration);
+var dbConnectionString = DatabaseProviderExtensions.ResolveConnectionString(builder.Configuration, dbProvider);
+
 builder.Services.AddDbContext<RbacDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    DatabaseProviderExtensions.ConfigureDbContext(options, dbProvider, dbConnectionString);
+});
 
 // Add repositories
 builder.Services.AddScoped<IPermissionRepository, PermissionRepository>();
@@ -240,7 +251,19 @@ using (var scope = app.Services.CreateScope())
 
     if (app.Environment.IsDevelopment())
     {
-        await db.Database.MigrateAsync();
+        // Schema bootstrap differs by provider:
+        //   - PostgreSQL: apply EF migrations (committed under Data/Migrations/).
+        //   - SQLite: use `EnsureCreated` so a fresh embedded install gets a
+        //     schema generated from the current EF model. SQLite migrations
+        //     are tracked separately under G2.1.
+        if (dbProvider == DatabaseProvider.Sqlite)
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+        else
+        {
+            await db.Database.MigrateAsync();
+        }
     }
 
     // Seed initial data

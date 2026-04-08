@@ -34,6 +34,14 @@ public class RbacDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // Provider-specific column type for the `Metadata` jsonb columns.
+        // Postgres uses native `jsonb`; SQLite stores the same payload as TEXT
+        // via the value converter declared further down. This keeps the
+        // hosted (Npgsql) deployments unchanged while letting the embedded
+        // SQLite path round-trip the same Dictionary<string,object> values
+        // without any schema-level provider awareness leaking out.
+        var jsonColumnType = Database.IsNpgsql() ? "jsonb" : null;
+
         // Application
         modelBuilder.Entity<Application>(entity =>
         {
@@ -147,10 +155,10 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.Provider).HasMaxLength(100).IsRequired();
             entity.Property(e => e.Email).HasMaxLength(500);
             entity.Property(e => e.DisplayName).HasMaxLength(500);
-            entity.Property(e => e.Metadata)
-                .HasColumnType("jsonb")
-                .HasConversion(dictionaryConverter)
-                .Metadata.SetValueComparer(dictionaryComparer);
+            var subjectMetadata = entity.Property(e => e.Metadata)
+                .HasConversion(dictionaryConverter);
+            if (jsonColumnType != null) subjectMetadata.HasColumnType(jsonColumnType);
+            subjectMetadata.Metadata.SetValueComparer(dictionaryComparer);
             entity.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
             entity.HasIndex(e => e.Email);
         });
@@ -183,10 +191,10 @@ public class RbacDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ExternalId).HasMaxLength(500).IsRequired();
             entity.Property(e => e.DisplayName).HasMaxLength(500);
-            entity.Property(e => e.Metadata)
-                .HasColumnType("jsonb")
-                .HasConversion(dictionaryConverter)
-                .Metadata.SetValueComparer(dictionaryComparer);
+            var instanceMetadata = entity.Property(e => e.Metadata)
+                .HasConversion(dictionaryConverter);
+            if (jsonColumnType != null) instanceMetadata.HasColumnType(jsonColumnType);
+            instanceMetadata.Metadata.SetValueComparer(dictionaryComparer);
             entity.HasIndex(e => new { e.ResourceTypeId, e.ExternalId }).IsUnique();
             entity.HasOne(e => e.ResourceType)
                 .WithMany(r => r.Instances)
@@ -247,10 +255,10 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.ResourceInstanceId).HasMaxLength(500);
             entity.Property(e => e.PermissionCode).HasMaxLength(200);
             entity.Property(e => e.Result).HasMaxLength(20);
-            entity.Property(e => e.Context)
-                .HasColumnType("jsonb")
-                .HasConversion(dictionaryConverter)
-                .Metadata.SetValueComparer(dictionaryComparer);
+            var auditContext = entity.Property(e => e.Context)
+                .HasConversion(dictionaryConverter);
+            if (jsonColumnType != null) auditContext.HasColumnType(jsonColumnType);
+            auditContext.Metadata.SetValueComparer(dictionaryComparer);
             entity.Property(e => e.IpAddress).HasMaxLength(50);
             entity.Property(e => e.UserAgent).HasMaxLength(500);
             entity.HasIndex(e => e.Timestamp);
@@ -328,10 +336,10 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.Property(e => e.KeyHash).HasMaxLength(500).IsRequired();
             entity.Property(e => e.KeyPrefix).HasMaxLength(50).IsRequired();
-            entity.Property(e => e.Scopes)
-                .HasColumnType("jsonb")
-                .HasConversion(stringListConverter)
-                .Metadata.SetValueComparer(stringListComparer);
+            var apiKeyScopes = entity.Property(e => e.Scopes)
+                .HasConversion(stringListConverter);
+            if (jsonColumnType != null) apiKeyScopes.HasColumnType(jsonColumnType);
+            apiKeyScopes.Metadata.SetValueComparer(stringListComparer);
             entity.Property(e => e.LastUsedIp).HasMaxLength(50);
             entity.HasIndex(e => e.KeyPrefix).IsUnique();
             entity.HasOne(e => e.Subject)
