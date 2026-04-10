@@ -86,6 +86,18 @@ public static class DataSeeder
                 Code = "containers",
                 Name = "Andy Containers",
                 Description = "Container management platform"
+            },
+            new Application
+            {
+                Code = "subscription",
+                Name = "Andy Subscription",
+                Description = "Subscription management, billing, and entitlements"
+            },
+            new Application
+            {
+                Code = "narration",
+                Name = "Andy Narration",
+                Description = "Text-to-speech narration and audiobook publishing"
             }
         };
 
@@ -159,6 +171,12 @@ public static class DataSeeder
                 break;
             case "containers":
                 await SeedContainersAsync(db, app, ct);
+                break;
+            case "subscription":
+                await SeedSubscriptionAsync(db, app, ct);
+                break;
+            case "narration":
+                await SeedNarrationAsync(db, app, ct);
                 break;
         }
 
@@ -356,6 +374,80 @@ public static class DataSeeder
         {
             new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Containers", IsSystem = true },
             new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Containers user", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+            {
+                db.Roles.Add(role);
+            }
+        }
+    }
+
+    private static async Task SeedSubscriptionAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "plan", Name = "Subscription Plan", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "subscription", Name = "User Subscription", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "invoice", Name = "Invoice", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "usage", Name = "Usage Record", SupportsInstances = false },
+            new ResourceType { ApplicationId = app.Id, Code = "entitlement", Name = "Entitlement", SupportsInstances = false },
+            new ResourceType { ApplicationId = app.Id, Code = "addon", Name = "Add-On", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "promo-code", Name = "Promo Code", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+            {
+                db.ResourceTypes.Add(rt);
+            }
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Subscription management", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "billing-manager", Name = "Billing Manager", Description = "Manage billing and invoices", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access to subscription data", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+            {
+                db.Roles.Add(role);
+            }
+        }
+    }
+
+    private static async Task SeedNarrationAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "audio-job", Name = "Audio Job", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "voice", Name = "Voice", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "audio-export", Name = "Audio Export", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "publishing-target", Name = "Publishing Target", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+            {
+                db.ResourceTypes.Add(rt);
+            }
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Narration", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "narrator", Name = "Narrator", Description = "Can create and manage narration jobs", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "publisher", Name = "Publisher", Description = "Can publish audiobooks to platforms", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access to narration data", IsSystem = true },
         };
 
         foreach (var role in roles)

@@ -270,7 +270,7 @@ using (var scope = app.Services.CreateScope())
     await DataSeeder.SeedAsync(db);
 
     // Seed application-specific data
-    foreach (var appCode in new[] { "andy-auth", "andy-docs", "andy-cli", "andy-agentic-web", "code-index", "containers" })
+    foreach (var appCode in new[] { "andy-auth", "andy-docs", "andy-cli", "andy-agentic-web", "code-index", "containers", "narration" })
     {
         await DataSeeder.SeedApplicationDataAsync(db, appCode);
     }
