@@ -98,6 +98,18 @@ public static class DataSeeder
                 Code = "narration",
                 Name = "Andy Narration",
                 Description = "Text-to-speech narration and audiobook publishing"
+            },
+            new Application
+            {
+                Code = "andy-issues",
+                Name = "Andy Issues",
+                Description = "Issue tracking and work item management"
+            },
+            new Application
+            {
+                Code = "andy-agents",
+                Name = "Andy Agents",
+                Description = "AI agent orchestration and management"
             }
         };
 
@@ -177,6 +189,12 @@ public static class DataSeeder
                 break;
             case "narration":
                 await SeedNarrationAsync(db, app, ct);
+                break;
+            case "andy-issues":
+                await SeedAndyIssuesAsync(db, app, ct);
+                break;
+            case "andy-agents":
+                await SeedAndyAgentsAsync(db, app, ct);
                 break;
         }
 
@@ -456,6 +474,66 @@ public static class DataSeeder
             {
                 db.Roles.Add(role);
             }
+        }
+    }
+
+    private static async Task SeedAndyIssuesAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "issue", Name = "Issue", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "project", Name = "Project", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "label", Name = "Label", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+                db.ResourceTypes.Add(rt);
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Issues", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard issue management", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+                db.Roles.Add(role);
+        }
+    }
+
+    private static async Task SeedAndyAgentsAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "agent", Name = "Agent", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "run", Name = "Agent Run", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "template", Name = "Agent Template", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+                db.ResourceTypes.Add(rt);
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Agents", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "operator", Name = "Operator", Description = "Can create and run agents", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access to agent data", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+                db.Roles.Add(role);
         }
     }
 
