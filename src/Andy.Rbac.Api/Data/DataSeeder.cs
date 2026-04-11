@@ -110,6 +110,12 @@ public static class DataSeeder
                 Code = "andy-agents",
                 Name = "Andy Agents",
                 Description = "AI agent orchestration and management"
+            },
+            new Application
+            {
+                Code = "andy-tasks",
+                Name = "Andy Tasks",
+                Description = "Tasks management service"
             }
         };
 
@@ -195,6 +201,9 @@ public static class DataSeeder
                 break;
             case "andy-agents":
                 await SeedAndyAgentsAsync(db, app, ct);
+                break;
+            case "andy-tasks":
+                await SeedAndyTasksAsync(db, app, ct);
                 break;
         }
 
@@ -528,6 +537,34 @@ public static class DataSeeder
             new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Agents", IsSystem = true },
             new Role { ApplicationId = app.Id, Code = "operator", Name = "Operator", Description = "Can create and run agents", IsSystem = true },
             new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access to agent data", IsSystem = true },
+        };
+
+        foreach (var role in roles)
+        {
+            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+                db.Roles.Add(role);
+        }
+    }
+
+    private static async Task SeedAndyTasksAsync(RbacDbContext db, Application app, CancellationToken ct)
+    {
+        var resourceTypes = new[]
+        {
+            new ResourceType { ApplicationId = app.Id, Code = "item", Name = "Item", SupportsInstances = true },
+            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
+        };
+
+        foreach (var rt in resourceTypes)
+        {
+            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+                db.ResourceTypes.Add(rt);
+        }
+
+        var roles = new[]
+        {
+            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Tasks", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Andy Tasks user", IsSystem = true },
+            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access", IsSystem = true },
         };
 
         foreach (var role in roles)
