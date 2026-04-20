@@ -298,7 +298,7 @@ Optional client-side cache short-circuits repeat checks.
 Key settings:
 
 ```json
-"Auth": { "Authority": "https://auth.rivoli.ai", "Audience": "andy-rbac" },
+"Auth": { "Authority": "https://auth.rivoli.ai", "Audience": "urn:andy-rbac-api" },
 "Database": { "Provider": "PostgreSql" },
 "Mcp": { "ServerUrl": "https://rbac-api.rivoli.ai", "McpPath": "/mcp" },
 "Cors": { "Origins": ["http://localhost:3000", "https://rbac.rivoli.ai"] }

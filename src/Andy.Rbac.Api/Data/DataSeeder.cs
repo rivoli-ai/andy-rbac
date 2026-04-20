@@ -18,6 +18,77 @@ public static class DataSeeder
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Manifest-driven application + resource-type + role seeding. Reads every
+    /// available registration manifest and inserts its RBAC section into the
+    /// database. Idempotent via existence checks. The legacy hardcoded
+    /// SeedApplicationsAsync / SeedApplicationDataAsync paths still run
+    /// alongside during the transition until every service ships a manifest.
+    /// </summary>
+    public static async Task SeedFromManifestsAsync(
+        RbacDbContext db,
+        IConfiguration configuration,
+        ILogger logger,
+        CancellationToken ct = default)
+    {
+        var manifests = RegistrationManifestLoader.LoadAll(configuration, logger);
+        if (manifests.Count == 0)
+        {
+            logger.LogInformation("No registration manifests found; relying on legacy hardcoded RBAC seeding.");
+            return;
+        }
+
+        foreach (var manifest in manifests)
+        {
+            if (manifest.Rbac is null) continue;
+
+            var app = await db.Applications.FirstOrDefaultAsync(a => a.Code == manifest.Rbac.ApplicationCode, ct);
+            if (app is null)
+            {
+                app = new Application
+                {
+                    Code = manifest.Rbac.ApplicationCode,
+                    Name = manifest.Rbac.ApplicationName,
+                    Description = manifest.Rbac.Description ?? manifest.Service.Description
+                };
+                db.Applications.Add(app);
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation("[manifest] Registered RBAC application: {Code}", app.Code);
+            }
+
+            foreach (var rt in manifest.Rbac.ResourceTypes ?? Array.Empty<RegistrationResourceType>())
+            {
+                if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
+                {
+                    db.ResourceTypes.Add(new ResourceType
+                    {
+                        ApplicationId = app.Id,
+                        Code = rt.Code,
+                        Name = rt.Name,
+                        SupportsInstances = rt.SupportsInstances ?? false
+                    });
+                }
+            }
+
+            foreach (var role in manifest.Rbac.Roles ?? Array.Empty<RegistrationRole>())
+            {
+                if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
+                {
+                    db.Roles.Add(new Role
+                    {
+                        ApplicationId = app.Id,
+                        Code = role.Code,
+                        Name = role.Name,
+                        Description = role.Description ?? string.Empty,
+                        IsSystem = role.IsSystem ?? true
+                    });
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
     private static async Task SeedActionsAsync(RbacDbContext db, CancellationToken ct)
     {
         var actions = new[]
@@ -41,22 +112,16 @@ public static class DataSeeder
         }
     }
 
+    /// <summary>
+    /// Legacy hardcoded application seeding. Only registers consumer apps and
+    /// out-of-scope services that don't yet ship a <c>config/registration.json</c>:
+    /// andy-cli, andy-agentic-web, subscription, narration. Every other Andy
+    /// service now registers itself via <see cref="SeedFromManifestsAsync"/>.
+    /// </summary>
     private static async Task SeedApplicationsAsync(RbacDbContext db, CancellationToken ct)
     {
         var applications = new[]
         {
-            new Application
-            {
-                Code = "andy-auth",
-                Name = "Andy Auth",
-                Description = "OAuth 2.0/OIDC authentication server"
-            },
-            new Application
-            {
-                Code = "andy-docs",
-                Name = "Andy Docs",
-                Description = "AI-assisted document management and writing platform"
-            },
             new Application
             {
                 Code = "andy-cli",
@@ -71,24 +136,6 @@ public static class DataSeeder
             },
             new Application
             {
-                Code = "andy-rbac",
-                Name = "Andy RBAC",
-                Description = "Role-Based Access Control service"
-            },
-            new Application
-            {
-                Code = "code-index",
-                Name = "Andy Code Index",
-                Description = "Code indexing and search platform"
-            },
-            new Application
-            {
-                Code = "containers",
-                Name = "Andy Containers",
-                Description = "Container management platform"
-            },
-            new Application
-            {
                 Code = "subscription",
                 Name = "Andy Subscription",
                 Description = "Subscription management, billing, and entitlements"
@@ -98,24 +145,6 @@ public static class DataSeeder
                 Code = "narration",
                 Name = "Andy Narration",
                 Description = "Text-to-speech narration and audiobook publishing"
-            },
-            new Application
-            {
-                Code = "andy-issues",
-                Name = "Andy Issues",
-                Description = "Issue tracking and work item management"
-            },
-            new Application
-            {
-                Code = "andy-agents",
-                Name = "Andy Agents",
-                Description = "AI agent orchestration and management"
-            },
-            new Application
-            {
-                Code = "andy-tasks",
-                Name = "Andy Tasks",
-                Description = "Tasks management service"
             }
         };
 
@@ -172,23 +201,11 @@ public static class DataSeeder
 
         switch (applicationCode)
         {
-            case "andy-docs":
-                await SeedAndyDocsAsync(db, app, ct);
-                break;
             case "andy-cli":
                 await SeedAndyCliAsync(db, app, ct);
                 break;
-            case "andy-auth":
-                await SeedAndyAuthAsync(db, app, ct);
-                break;
             case "andy-agentic-web":
                 await SeedAndyAgenticWebAsync(db, app, ct);
-                break;
-            case "code-index":
-                await SeedCodeIndexAsync(db, app, ct);
-                break;
-            case "containers":
-                await SeedContainersAsync(db, app, ct);
                 break;
             case "subscription":
                 await SeedSubscriptionAsync(db, app, ct);
@@ -196,54 +213,12 @@ public static class DataSeeder
             case "narration":
                 await SeedNarrationAsync(db, app, ct);
                 break;
-            case "andy-issues":
-                await SeedAndyIssuesAsync(db, app, ct);
-                break;
-            case "andy-agents":
-                await SeedAndyAgentsAsync(db, app, ct);
-                break;
-            case "andy-tasks":
-                await SeedAndyTasksAsync(db, app, ct);
-                break;
         }
 
         await db.SaveChangesAsync(ct);
     }
 
-    private static async Task SeedAndyDocsAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        // Resource types
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "document", Name = "Document", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "collection", Name = "Collection", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "template", Name = "Template", SupportsInstances = true },
-        };
-
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-            {
-                db.ResourceTypes.Add(rt);
-            }
-        }
-
-        // Roles
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Docs", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "editor", Name = "Editor", Description = "Can create and edit documents", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Can only view documents", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-            {
-                db.Roles.Add(role);
-            }
-        }
-    }
+    // SeedAndyDocsAsync: removed — andy-docs now manifest-driven (S1/S2 refactor).
 
     private static async Task SeedAndyCliAsync(RbacDbContext db, Application app, CancellationToken ct)
     {
@@ -278,37 +253,7 @@ public static class DataSeeder
         }
     }
 
-    private static async Task SeedAndyAuthAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "user", Name = "User", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "client", Name = "OAuth Client", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "scope", Name = "Scope", SupportsInstances = true },
-        };
-
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-            {
-                db.ResourceTypes.Add(rt);
-            }
-        }
-
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full auth server access", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "user-manager", Name = "User Manager", Description = "Can manage users", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-            {
-                db.Roles.Add(role);
-            }
-        }
-    }
+    // SeedAndyAuthAsync: removed — andy-auth now manifest-driven.
 
     private static async Task SeedAndyAgenticWebAsync(RbacDbContext db, Application app, CancellationToken ct)
     {
@@ -342,75 +287,9 @@ public static class DataSeeder
         }
     }
 
-    private static async Task SeedCodeIndexAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "repository", Name = "Repository", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
-            new ResourceType { ApplicationId = app.Id, Code = "task", Name = "Task", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "enrichment", Name = "Enrichment", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "search", Name = "Search", SupportsInstances = false },
-        };
+    // SeedCodeIndexAsync: removed — andy-code-index now manifest-driven.
 
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-            {
-                db.ResourceTypes.Add(rt);
-            }
-        }
-
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Code Index", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Code Index user", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-            {
-                db.Roles.Add(role);
-            }
-        }
-    }
-
-    private static async Task SeedContainersAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "container", Name = "Container", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "image", Name = "Image", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "template", Name = "Template", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "workspace", Name = "Workspace", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "provider", Name = "Provider", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
-        };
-
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-            {
-                db.ResourceTypes.Add(rt);
-            }
-        }
-
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Containers", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Containers user", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-            {
-                db.Roles.Add(role);
-            }
-        }
-    }
+    // SeedContainersAsync: removed — andy-containers now manifest-driven.
 
     private static async Task SeedSubscriptionAsync(RbacDbContext db, Application app, CancellationToken ct)
     {
@@ -486,93 +365,8 @@ public static class DataSeeder
         }
     }
 
-    private static async Task SeedAndyIssuesAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "issue", Name = "Issue", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "project", Name = "Project", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "label", Name = "Label", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
-        };
-
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-                db.ResourceTypes.Add(rt);
-        }
-
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Issues", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard issue management", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-                db.Roles.Add(role);
-        }
-    }
-
-    private static async Task SeedAndyAgentsAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "agent", Name = "Agent", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "run", Name = "Agent Run", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "template", Name = "Agent Template", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
-        };
-
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-                db.ResourceTypes.Add(rt);
-        }
-
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Agents", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "operator", Name = "Operator", Description = "Can create and run agents", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access to agent data", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-                db.Roles.Add(role);
-        }
-    }
-
-    private static async Task SeedAndyTasksAsync(RbacDbContext db, Application app, CancellationToken ct)
-    {
-        var resourceTypes = new[]
-        {
-            new ResourceType { ApplicationId = app.Id, Code = "item", Name = "Item", SupportsInstances = true },
-            new ResourceType { ApplicationId = app.Id, Code = "settings", Name = "Settings", SupportsInstances = false },
-        };
-
-        foreach (var rt in resourceTypes)
-        {
-            if (!await db.ResourceTypes.AnyAsync(r => r.ApplicationId == app.Id && r.Code == rt.Code, ct))
-                db.ResourceTypes.Add(rt);
-        }
-
-        var roles = new[]
-        {
-            new Role { ApplicationId = app.Id, Code = "admin", Name = "Administrator", Description = "Full access to Andy Tasks", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "user", Name = "User", Description = "Standard Andy Tasks user", IsSystem = true },
-            new Role { ApplicationId = app.Id, Code = "viewer", Name = "Viewer", Description = "Read-only access", IsSystem = true },
-        };
-
-        foreach (var role in roles)
-        {
-            if (!await db.Roles.AnyAsync(r => r.ApplicationId == app.Id && r.Code == role.Code, ct))
-                db.Roles.Add(role);
-        }
-    }
+    // SeedAndyIssuesAsync, SeedAndyAgentsAsync, SeedAndyTasksAsync: removed —
+    // all now manifest-driven via each service's config/registration.json.
 
     /// <summary>
     /// Seeds super-admin permissions for all resource types and creates a test user subject.

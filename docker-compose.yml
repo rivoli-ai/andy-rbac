@@ -28,10 +28,13 @@ services:
       - ASPNETCORE_URLS=https://+:8443;http://+:8080
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=andy_rbac;Username=postgres;Password=postgres
       - Auth__Authority=https://host.docker.internal:5001
-      - Auth__Audience=andy-rbac
+      - Auth__Audience=urn:andy-rbac-api
       - Cors__Origins__0=https://localhost:5180
       - Cors__Origins__1=http://localhost:5180
       - Cors__Origins__2=https://localhost:3000
+      # Registration manifests — seed RBAC applications, resource types, roles
+      # from each sibling service's config/registration.json at startup.
+      - REGISTRATIONS__MANIFEST_PATHS=/monorepo/andy-auth/config/registration.json:/monorepo/andy-rbac/config/registration.json:/monorepo/andy-containers/config/registration.json:/monorepo/andy-docs/config/registration.json:/monorepo/andy-code-index/config/registration.json:/monorepo/andy-issues/config/registration.json:/monorepo/andy-agents/config/registration.json:/monorepo/andy-tasks/config/registration.json:/monorepo/andy-policies/config/registration.json:/monorepo/andy-models/config/registration.json
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -39,6 +42,7 @@ services:
       - "7004:8080"
     volumes:
       - ./certs:/usr/local/share/ca-certificates/custom:ro
+      - ..:/monorepo:ro
     depends_on:
       postgres:
         condition: service_healthy

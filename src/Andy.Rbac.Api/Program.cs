@@ -269,8 +269,17 @@ using (var scope = app.Services.CreateScope())
     // Seed initial data
     await DataSeeder.SeedAsync(db);
 
-    // Seed application-specific data
-    foreach (var appCode in new[] { "andy-auth", "andy-docs", "andy-cli", "andy-agentic-web", "code-index", "containers", "narration", "andy-issues", "andy-agents", "andy-tasks" })
+    // Manifest-driven app + roles + resource types (reads config/registration.json
+    // files from sibling services via REGISTRATIONS__MANIFEST_PATHS env var or
+    // Registrations:ManifestPaths config). Must run AFTER SeedAsync so the global
+    // roles and actions exist for FK references.
+    await DataSeeder.SeedFromManifestsAsync(db, app.Configuration, app.Logger);
+
+    // Seed application-specific data for the consumer apps and out-of-scope
+    // services that don't yet ship a registration manifest. The 10 in-scope
+    // Andy services (auth/rbac/docs/code-index/containers/issues/agents/tasks/
+    // policies/models) are handled by SeedFromManifestsAsync above.
+    foreach (var appCode in new[] { "andy-cli", "andy-agentic-web", "narration", "subscription" })
     {
         await DataSeeder.SeedApplicationDataAsync(db, appCode);
     }
