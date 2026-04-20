@@ -1,0 +1,67 @@
+{
+  "$schema": "../../andy-service-template/docs/registration.schema.json",
+  "service": {
+    "name": "andy-rbac",
+    "displayName": "Andy RBAC",
+    "description": "Role-based access control — permission evaluation, role inheritance, policy checks.",
+    "embeddedProxyPrefix": "/rbac",
+    "ports": {
+      "dotnetHttps": 5003,
+      "dotnetHttp":  5004,
+      "dotnetPostgres": 5433,
+      "dockerHttps": 7003,
+      "dockerHttp":  7004,
+      "dockerPostgres": 7433,
+      "embeddedProxy": 9100
+    }
+  },
+  "auth": {
+    "audience": "urn:andy-rbac-api",
+    "webClient": {
+      "clientId": "andy-rbac-web",
+      "clientType": "public",
+      "displayName": "Andy RBAC Web",
+      "description": "Admin UI for RBAC management (server-side Blazor/MVC on ports 5180/5181)",
+      "grantTypes": ["authorization_code", "refresh_token"],
+      "scopes": ["email", "profile", "roles", "scp:urn:andy-rbac-api"],
+      "redirectUris": [
+        "https://localhost:5180/signin-oidc",
+        "http://localhost:5181/signin-oidc",
+        "https://localhost:5180/callback",
+        "http://localhost:5181/callback",
+        "http://localhost:9100/rbac/callback"
+      ],
+      "postLogoutRedirectUris": [
+        "https://localhost:5180/",
+        "https://localhost:5180/signout-callback-oidc",
+        "http://localhost:5181/",
+        "http://localhost:5181/signout-callback-oidc",
+        "http://localhost:9100/rbac/"
+      ]
+    }
+  },
+  "rbac": {
+    "applicationCode": "andy-rbac",
+    "applicationName": "Andy RBAC",
+    "description": "Role-Based Access Control service",
+    "resourceTypes": [
+      { "code": "application",   "name": "Application",    "supportsInstances": true  },
+      { "code": "role",          "name": "Role",           "supportsInstances": true  },
+      { "code": "permission",    "name": "Permission",     "supportsInstances": true  },
+      { "code": "subject",       "name": "Subject",        "supportsInstances": true  }
+    ],
+    "roles": [
+      { "code": "admin",  "name": "Administrator", "description": "Full access to RBAC",    "isSystem": true },
+      { "code": "user",   "name": "User",          "description": "Standard user",          "isSystem": true },
+      { "code": "viewer", "name": "Viewer",        "description": "Read-only RBAC access",  "isSystem": true }
+    ],
+    "testUserRole": "admin"
+  },
+  "settings": {
+    "definitions": [
+      { "key": "andy.rbac.apiBaseUrl",       "displayName": "RBAC API URL",     "description": "Andy RBAC API base URL",            "category": "General",     "dataType": "Uri",     "defaultValue": "https://localhost:5003" },
+      { "key": "andy.rbac.applicationCode",  "displayName": "Application Code", "description": "RBAC application identifier",       "category": "General",     "dataType": "String",  "defaultValue": "andy-rbac" },
+      { "key": "andy.rbac.cacheTtlSeconds",  "displayName": "Cache TTL",        "description": "Permission cache TTL in seconds",   "category": "Performance", "dataType": "Integer", "defaultValue": 300 }
+    ]
+  }
+}
