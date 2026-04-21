@@ -3,6 +3,7 @@ using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Infrastructure.Repositories;
+using Andy.Settings.Client;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore.Authentication;
@@ -139,6 +140,22 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOpt
 });
 
 builder.Services.AddAuthorization();
+
+// andy-settings client — fail loud if unreachable.
+//
+// andy-rbac resolves system-level policy knobs (RBAC cache TTLs, org
+// defaults, admin bootstrap identifiers) from andy-settings. Running
+// without it means stale local config silently wins over Conductor-side
+// admin changes — the "works locally but fails on a fresh clone" class
+// of bug epic rivoli-ai/conductor#771 deletes.
+var settingsBaseUrl = builder.Configuration["AndySettings:ApiBaseUrl"];
+if (string.IsNullOrWhiteSpace(settingsBaseUrl))
+{
+    throw new InvalidOperationException(
+        "AndySettings:ApiBaseUrl must be configured. andy-rbac sources its " +
+        "policy configuration from andy-settings and will not start without it.");
+}
+builder.Services.AddAndySettingsClient(builder.Configuration);
 
 // Add CORS
 builder.Services.AddCors(options =>

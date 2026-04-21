@@ -29,6 +29,11 @@
     <!-- HTTP Client -->
     <PackageVersion Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Http.Polly" Version="8.0.11" />
+    <!-- Andy.Settings.Client: during epic/andy-settings-migration, pinned to the dev
+         version produced by `andy-settings/scripts/pack-local.sh` and resolved via the
+         root-level NuGet.config local feed. On merge to main, flip to the
+         `yyyy.mm.dd-rc.<run>` version published to nuget.org by andy-settings CI. -->
+    <PackageVersion Include="Andy.Settings.Client" Version="0.1.0-dev" />
     <!-- MCP -->
     <PackageVersion Include="ModelContextProtocol" Version="0.4.0-preview.3" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="0.4.0-preview.3" />

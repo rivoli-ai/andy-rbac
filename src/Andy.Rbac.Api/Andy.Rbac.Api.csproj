@@ -23,6 +23,7 @@
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="Andy.Settings.Client" />
   </ItemGroup>
 
   <ItemGroup>
