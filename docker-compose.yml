@@ -29,6 +29,9 @@ services:
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=andy_rbac;Username=postgres;Password=postgres
       - Auth__Authority=https://host.docker.internal:5001
       - Auth__Audience=urn:andy-rbac-api
+      # andy-settings client wiring (epic rivoli-ai/conductor#771)
+      - AndySettings__ApiBaseUrl=https://host.docker.internal:5300
+      - AndySettings__ApplicationCode=andy-rbac
       - Cors__Origins__0=https://localhost:5180
       - Cors__Origins__1=http://localhost:5180
       - Cors__Origins__2=https://localhost:3000
