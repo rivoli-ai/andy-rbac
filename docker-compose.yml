@@ -70,7 +70,7 @@ services:
       - ASPNETCORE_URLS=https://+:8443;http://+:8080
       - Rbac__ApplicationCode=andy-rbac
       - Rbac__ApiBaseUrl=https://api:8443
-      - AndyAuth__Authority=https://host.docker.internal:5001
+      - AndyAuth__Authority=https://host.docker.internal:${ANDY_AUTH_DOCKER_HTTPS:-7001}
       - AndyAuth__ClientId=andy-rbac-web
     extra_hosts:
       - "host.docker.internal:host-gateway"
