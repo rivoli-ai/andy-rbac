@@ -22,6 +22,10 @@ services:
       dockerfile: src/Andy.Rbac.Api/Dockerfile
       additional_contexts:
         certs: ./certs
+        # Mounts the sibling andy-settings artifacts so the Dockerfile can
+        # restore the local Andy.Settings.Client 0.1.0-dev package.
+        # Run `bash ../andy-settings/scripts/pack-local.sh` once before build.
+        andy-settings-artifacts: ../andy-settings/artifacts
     container_name: andy-rbac-api
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
