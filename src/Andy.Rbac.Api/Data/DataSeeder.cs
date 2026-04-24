@@ -10,6 +10,17 @@ namespace Andy.Rbac.Api.Data;
 /// </summary>
 public static class DataSeeder
 {
+    /// <summary>
+    /// External identifier of the well-known dev/test user (<c>test@andy.local</c>),
+    /// pinned to the same Guid that andy-auth's <c>DbSeeder.TestUserWellKnownId</c>
+    /// assigns. Pre-binding manifest-declared <c>testUserRole</c> entries to this
+    /// Subject would silently miss real tokens if these constants drifted; both
+    /// repos must be updated together. See rivoli-ai/andy-auth#56 +
+    /// rivoli-ai/andy-rbac#52.
+    /// </summary>
+    public const string TestUserWellKnownExternalId = "00000000-0000-0000-0000-000000000001";
+    public const string TestUserWellKnownEmail = "test@andy.local";
+
     public static async Task SeedAsync(RbacDbContext db, CancellationToken ct = default)
     {
         await SeedActionsAsync(db, ct);
@@ -86,7 +97,112 @@ public static class DataSeeder
             }
         }
 
+        // Persist applications + roles before processing testUserRole bindings —
+        // the latter need the Role rows queryable by code.
         await db.SaveChangesAsync(ct);
+
+        await SeedTestUserRoleBindingsAsync(db, manifests, configuration, logger, ct);
+    }
+
+    /// <summary>
+    /// Manifest-declared <c>testUserRole</c> bindings (#52). For each manifest
+    /// that declares one, ensures the well-known dev test subject
+    /// (<c>test@andy.local</c>, andy-auth's <see cref="TestUserWellKnownExternalId"/>)
+    /// has the named role on this manifest's application. Skipped in Production
+    /// — <c>testUserRole</c> is a dev convenience and never appropriate for prod.
+    /// Idempotent; safe across repeated startups.
+    /// </summary>
+    private static async Task SeedTestUserRoleBindingsAsync(
+        RbacDbContext db,
+        IReadOnlyList<RegistrationManifest> manifests,
+        IConfiguration configuration,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        // Match the same env-var convention used elsewhere in the seeder (andy-auth's
+        // DbSeeder uses the same lookup). Falls back to "Production" — fail-closed.
+        var environment = configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? "Production";
+        if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+        {
+            // Walk the manifests once to log which bindings were skipped — operators
+            // running a misconfigured Production deployment should see them in logs.
+            foreach (var m in manifests)
+            {
+                if (!string.IsNullOrWhiteSpace(m.Rbac?.TestUserRole))
+                {
+                    logger.LogInformation(
+                        "[manifest] Skipping testUserRole binding ({Role}) on {App} — environment is Production.",
+                        m.Rbac.TestUserRole, m.Rbac.ApplicationCode);
+                }
+            }
+            return;
+        }
+
+        Subject? testSubject = null;
+
+        foreach (var manifest in manifests)
+        {
+            var roleCode = manifest.Rbac?.TestUserRole;
+            if (string.IsNullOrWhiteSpace(roleCode)) continue;
+
+            var app = await db.Applications.FirstOrDefaultAsync(a => a.Code == manifest.Rbac!.ApplicationCode, ct);
+            if (app is null)
+            {
+                logger.LogWarning(
+                    "[manifest] testUserRole '{Role}' declared for application '{App}' but the application row was not found — skipping.",
+                    roleCode, manifest.Rbac!.ApplicationCode);
+                continue;
+            }
+
+            var role = await db.Roles.FirstOrDefaultAsync(r => r.ApplicationId == app.Id && r.Code == roleCode, ct);
+            if (role is null)
+            {
+                logger.LogWarning(
+                    "[manifest] testUserRole '{Role}' declared for '{App}' but no matching role exists in this manifest — skipping.",
+                    roleCode, manifest.Rbac!.ApplicationCode);
+                continue;
+            }
+
+            // Lazily provision the test subject on first need so we don't create
+            // an orphan row for manifests that don't declare a testUserRole.
+            testSubject ??= await GetOrCreateTestSubjectAsync(db, ct);
+
+            if (!await db.SubjectRoles.AnyAsync(sr => sr.SubjectId == testSubject.Id && sr.RoleId == role.Id, ct))
+            {
+                db.SubjectRoles.Add(new SubjectRole
+                {
+                    SubjectId = testSubject.Id,
+                    RoleId = role.Id,
+                    GrantedAt = DateTimeOffset.UtcNow
+                });
+                logger.LogInformation(
+                    "[manifest] Granted role '{Role}' on '{App}' to test user {Email} ({ExternalId}).",
+                    roleCode, manifest.Rbac!.ApplicationCode, TestUserWellKnownEmail, TestUserWellKnownExternalId);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task<Subject> GetOrCreateTestSubjectAsync(RbacDbContext db, CancellationToken ct)
+    {
+        var subject = await db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == TestUserWellKnownExternalId, ct);
+        if (subject is not null) return subject;
+
+        subject = new Subject
+        {
+            ExternalId = TestUserWellKnownExternalId,
+            Provider = "andy-auth",
+            Type = SubjectType.User,
+            Email = TestUserWellKnownEmail,
+            DisplayName = "Test User",
+            IsActive = true
+        };
+        db.Subjects.Add(subject);
+        await db.SaveChangesAsync(ct);
+        return subject;
     }
 
     private static async Task SeedActionsAsync(RbacDbContext db, CancellationToken ct)

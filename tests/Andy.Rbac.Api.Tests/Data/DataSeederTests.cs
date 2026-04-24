@@ -2,6 +2,9 @@ using Andy.Rbac.Api.Data;
 using Andy.Rbac.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Andy.Rbac.Api.Tests.Data;
@@ -281,5 +284,137 @@ public class DataSeederTests
             .FirstOrDefaultAsync(a => a.Code == "andy-docs");
 
         app!.Roles.Should().OnlyContain(r => r.IsSystem);
+    }
+
+    // -- testUserRole binding (#52) ------------------------------------------
+
+    private const string SampleManifestWithTestUserRole = """
+        {
+          "service": {
+            "name": "andy-policies-test",
+            "displayName": "Andy Policies (Test Manifest)",
+            "description": "Fixture",
+            "embeddedProxyPrefix": "/policies"
+          },
+          "rbac": {
+            "applicationCode": "andy-policies-test",
+            "applicationName": "Andy Policies (Test)",
+            "description": "Fixture for DataSeederTests",
+            "resourceTypes": [
+              { "code": "policy", "name": "Policy", "supportsInstances": true }
+            ],
+            "roles": [
+              { "code": "admin", "name": "Administrator", "isSystem": true },
+              { "code": "viewer", "name": "Viewer", "isSystem": true }
+            ],
+            "testUserRole": "admin"
+          }
+        }
+        """;
+
+    private static IConfiguration ConfigurationWithManifest(string manifestPath, string env = "Development")
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = env,
+                ["Registrations:ManifestPaths:0"] = manifestPath,
+            })
+            .Build();
+    }
+
+    private static string WriteTempManifest(string content)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"manifest-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, content);
+        return path;
+    }
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_WithTestUserRole_BindsRoleToWellKnownTestUser()
+    {
+        using var context = CreateContext();
+        var manifestPath = WriteTempManifest(SampleManifestWithTestUserRole);
+        try
+        {
+            var config = ConfigurationWithManifest(manifestPath);
+            var logger = NullLogger.Instance;
+
+            await DataSeeder.SeedFromManifestsAsync(context, config, logger);
+
+            var subject = await context.Subjects
+                .FirstOrDefaultAsync(s => s.ExternalId == DataSeeder.TestUserWellKnownExternalId);
+            subject.Should().NotBeNull();
+            subject!.Email.Should().Be(DataSeeder.TestUserWellKnownEmail);
+
+            var binding = await context.SubjectRoles
+                .Include(sr => sr.Role)
+                .ThenInclude(r => r.Application)
+                .FirstOrDefaultAsync(sr => sr.SubjectId == subject.Id);
+            binding.Should().NotBeNull();
+            binding!.Role.Code.Should().Be("admin");
+            binding.Role.Application!.Code.Should().Be("andy-policies-test");
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_TestUserRole_IsIdempotent()
+    {
+        using var context = CreateContext();
+        var manifestPath = WriteTempManifest(SampleManifestWithTestUserRole);
+        try
+        {
+            var config = ConfigurationWithManifest(manifestPath);
+            var logger = NullLogger.Instance;
+
+            await DataSeeder.SeedFromManifestsAsync(context, config, logger);
+            await DataSeeder.SeedFromManifestsAsync(context, config, logger);
+
+            (await context.Subjects.CountAsync(s => s.ExternalId == DataSeeder.TestUserWellKnownExternalId))
+                .Should().Be(1);
+            (await context.SubjectRoles.CountAsync()).Should().Be(1);
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_InProduction_SkipsTestUserRoleBinding()
+    {
+        using var context = CreateContext();
+        var manifestPath = WriteTempManifest(SampleManifestWithTestUserRole);
+        try
+        {
+            var config = ConfigurationWithManifest(manifestPath, env: "Production");
+            var logger = NullLogger.Instance;
+
+            await DataSeeder.SeedFromManifestsAsync(context, config, logger);
+
+            // Application + roles still seed normally; only the testUserRole
+            // binding is skipped.
+            (await context.Applications.AnyAsync(a => a.Code == "andy-policies-test")).Should().BeTrue();
+            (await context.Subjects.AnyAsync(s => s.ExternalId == DataSeeder.TestUserWellKnownExternalId))
+                .Should().BeFalse();
+            (await context.SubjectRoles.AnyAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
+    public void TestUserWellKnownExternalId_MatchesAndyAuthConstant()
+    {
+        // Locks the constant — andy-auth's DbSeeder.TestUserWellKnownId must
+        // match. If you change one, change both. See rivoli-ai/andy-auth#56.
+        DataSeeder.TestUserWellKnownExternalId.Should().Be("00000000-0000-0000-0000-000000000001");
+        DataSeeder.TestUserWellKnownEmail.Should().Be("test@andy.local");
     }
 }
