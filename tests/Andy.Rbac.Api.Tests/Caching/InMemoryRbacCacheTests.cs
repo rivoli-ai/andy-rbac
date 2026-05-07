@@ -179,4 +179,91 @@ public class InMemoryRbacCacheTests
         result.Should().NotBeNull();
         result.Should().BeEmpty();
     }
+
+    // --- Issue #47: cache key includes applicationCode + groups ---
+
+    [Fact]
+    public async Task SetPermissions_DifferentApplicationCode_KeepsSeparateBuckets()
+    {
+        // Without applicationCode in the key, a cache hit for "all apps"
+        // would incorrectly satisfy a later request for "app-X only" (or
+        // vice versa). Each tuple gets its own bucket.
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "x:y:read" }, applicationCode: "app-x");
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "y:y:read" }, applicationCode: "app-y");
+
+        var x = await _cache.GetPermissionsAsync("user-1", applicationCode: "app-x");
+        var y = await _cache.GetPermissionsAsync("user-1", applicationCode: "app-y");
+        var unscoped = await _cache.GetPermissionsAsync("user-1", applicationCode: null);
+
+        x.Should().BeEquivalentTo(new[] { "x:y:read" });
+        y.Should().BeEquivalentTo(new[] { "y:y:read" });
+        unscoped.Should().BeNull("the unscoped tuple is a separate cache key");
+    }
+
+    [Fact]
+    public async Task SetPermissions_DifferentGroups_KeepsSeparateBuckets()
+    {
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "from-engs" }, groups: new[] { "engineers" });
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "from-admins" }, groups: new[] { "admins" });
+
+        var engs = await _cache.GetPermissionsAsync("user-1", groups: new[] { "engineers" });
+        var admins = await _cache.GetPermissionsAsync("user-1", groups: new[] { "admins" });
+
+        engs.Should().BeEquivalentTo(new[] { "from-engs" });
+        admins.Should().BeEquivalentTo(new[] { "from-admins" });
+    }
+
+    [Fact]
+    public async Task SetPermissions_GroupOrderDoesNotMatter()
+    {
+        // Same set, different ordering — must hit the same bucket.
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "p" }, groups: new[] { "a", "b" });
+        var hit = await _cache.GetPermissionsAsync("user-1", groups: new[] { "b", "a" });
+
+        hit.Should().BeEquivalentTo(new[] { "p" });
+    }
+
+    [Fact]
+    public async Task InvalidateAsync_ClearsAllVariantsForSubject()
+    {
+        // Subject has cached entries for several (app, groups) tuples.
+        // InvalidateAsync should drop every one of them.
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "p" }, applicationCode: "app-a");
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "p" }, applicationCode: "app-b");
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "p" }, groups: new[] { "g1" });
+        await _cache.SetRolesAsync("user-1", new List<string> { "r" }, applicationCode: "app-a");
+
+        await _cache.InvalidateAsync("user-1");
+
+        (await _cache.GetPermissionsAsync("user-1", applicationCode: "app-a")).Should().BeNull();
+        (await _cache.GetPermissionsAsync("user-1", applicationCode: "app-b")).Should().BeNull();
+        (await _cache.GetPermissionsAsync("user-1", groups: new[] { "g1" })).Should().BeNull();
+        (await _cache.GetRolesAsync("user-1", applicationCode: "app-a")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task InvalidateAllAsync_MakesPriorEntriesUnreadable()
+    {
+        // Generation bump: stored entries become unreachable from the public
+        // Get path even though they may still occupy IMemoryCache until TTL.
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "p" }, applicationCode: "app-a");
+        await _cache.SetRolesAsync("user-2", new List<string> { "r" });
+
+        await _cache.InvalidateAllAsync();
+
+        (await _cache.GetPermissionsAsync("user-1", applicationCode: "app-a")).Should().BeNull();
+        (await _cache.GetRolesAsync("user-2")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task InvalidateAllAsync_NewWritesAfterBumpAreReadable()
+    {
+        // Sanity: after invalidation, the cache still works for fresh writes.
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "old" });
+        await _cache.InvalidateAllAsync();
+        await _cache.SetPermissionsAsync("user-1", new List<string> { "new" });
+
+        var result = await _cache.GetPermissionsAsync("user-1");
+        result.Should().BeEquivalentTo(new[] { "new" });
+    }
 }
