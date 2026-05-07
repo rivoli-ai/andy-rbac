@@ -26,7 +26,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Allowed.Should().BeTrue();
     }
@@ -42,7 +42,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Allowed.Should().BeFalse();
     }
@@ -58,7 +58,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Allowed.Should().BeFalse();
         result.Reason.Should().Be("Subject not found");
@@ -75,7 +75,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Allowed.Should().BeTrue();
     }
@@ -91,7 +91,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>();
+        var result = await response.Content.ReadFromJsonAsync<CheckPermissionResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Allowed.Should().BeFalse();
     }
@@ -104,7 +104,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>();
+        var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Permissions.Should().NotBeEmpty();
         result.Permissions.Should().Contain(p => p.Contains("document:read"));
@@ -118,7 +118,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>();
+        var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Permissions.Should().OnlyContain(p => p.StartsWith("test-app:"));
     }
@@ -131,7 +131,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>();
+        var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Permissions.Should().BeEmpty();
     }
@@ -144,7 +144,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>();
+        var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Roles.Should().Contain("admin");
     }
@@ -157,7 +157,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>();
+        var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Roles.Should().BeEmpty();
     }
@@ -170,7 +170,7 @@ public class CheckControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>();
+        var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Roles.Should().BeEmpty();
     }

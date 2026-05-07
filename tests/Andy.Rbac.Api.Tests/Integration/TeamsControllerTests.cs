@@ -24,7 +24,7 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var teams = await response.Content.ReadFromJsonAsync<List<TeamDto>>();
+        var teams = await response.Content.ReadFromJsonAsync<List<TeamDto>>(TestJsonOptions.Default);
         teams.Should().NotBeNull();
         teams.Should().Contain(t => t.Code == "test-team");
     }
@@ -40,7 +40,7 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var team = await response.Content.ReadFromJsonAsync<TeamDetailDto>();
+        var team = await response.Content.ReadFromJsonAsync<TeamDetailDto>(TestJsonOptions.Default);
         team.Should().NotBeNull();
         team!.Code.Should().Be("test-team");
         team.Members.Should().Contain(m => m.SubjectExternalId == "editor-user");
@@ -64,7 +64,7 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var team = await response.Content.ReadFromJsonAsync<TeamDetailDto>();
+        var team = await response.Content.ReadFromJsonAsync<TeamDetailDto>(TestJsonOptions.Default);
         team.Should().NotBeNull();
         team!.Code.Should().Be("test-team");
     }
@@ -90,7 +90,7 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var team = await response.Content.ReadFromJsonAsync<TeamDto>();
+        var team = await response.Content.ReadFromJsonAsync<TeamDto>(TestJsonOptions.Default);
         team.Should().NotBeNull();
         team!.Code.Should().Be(request.Code);
         team.Name.Should().Be("New Team");
@@ -120,7 +120,7 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var team = await response.Content.ReadFromJsonAsync<TeamDto>();
+        var team = await response.Content.ReadFromJsonAsync<TeamDto>(TestJsonOptions.Default);
         team.Should().NotBeNull();
         team!.ParentTeamCode.Should().Be("test-team");
     }
@@ -150,7 +150,7 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var team = await response.Content.ReadFromJsonAsync<TeamDto>();
+        var team = await response.Content.ReadFromJsonAsync<TeamDto>(TestJsonOptions.Default);
         team.Should().NotBeNull();
         team!.Name.Should().Be("Updated Team Name");
     }

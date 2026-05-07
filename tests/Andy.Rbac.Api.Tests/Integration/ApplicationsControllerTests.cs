@@ -23,7 +23,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var applications = await response.Content.ReadFromJsonAsync<List<ApplicationSummary>>();
+        var applications = await response.Content.ReadFromJsonAsync<List<ApplicationSummary>>(TestJsonOptions.Default);
         applications.Should().NotBeNull();
         applications.Should().Contain(a => a.Code == "test-app");
     }
@@ -39,7 +39,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>();
+        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>(TestJsonOptions.Default);
         application.Should().NotBeNull();
         application!.Code.Should().Be("test-app");
         application.Name.Should().Be("Test Application");
@@ -63,7 +63,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>();
+        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>(TestJsonOptions.Default);
         application.Should().NotBeNull();
         application!.Code.Should().Be("test-app");
     }
@@ -89,7 +89,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>();
+        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>(TestJsonOptions.Default);
         application.Should().NotBeNull();
         application!.Code.Should().Be(request.Code);
         application.Name.Should().Be("New Application");
@@ -120,7 +120,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>();
+        var application = await response.Content.ReadFromJsonAsync<ApplicationDetail>(TestJsonOptions.Default);
         application.Should().NotBeNull();
         application!.Name.Should().Be("Updated Test Application");
     }
@@ -144,7 +144,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
         // Arrange - create an app to delete
         var createRequest = new CreateApplicationRequest($"delete-app-{Guid.NewGuid():N}", "Delete Me");
         var createResponse = await _client.PostAsJsonAsync("/api/applications", createRequest);
-        var created = await createResponse.Content.ReadFromJsonAsync<ApplicationDetail>();
+        var created = await createResponse.Content.ReadFromJsonAsync<ApplicationDetail>(TestJsonOptions.Default);
 
         // Act
         var response = await _client.DeleteAsync($"/api/applications/{created!.Id}");
@@ -179,7 +179,7 @@ public class ApplicationsControllerTests : IClassFixture<RbacWebApplicationFacto
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var resourceType = await response.Content.ReadFromJsonAsync<ResourceTypeSummary>();
+        var resourceType = await response.Content.ReadFromJsonAsync<ResourceTypeSummary>(TestJsonOptions.Default);
         resourceType.Should().NotBeNull();
         resourceType!.Code.Should().Be(request.Code);
     }

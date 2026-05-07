@@ -24,7 +24,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Items.Should().NotBeEmpty();
         result.Items.Should().Contain(s => s.ExternalId == "admin-user");
@@ -38,7 +38,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Items.Should().Contain(s => s.ExternalId == "admin-user");
     }
@@ -51,7 +51,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Items.Should().OnlyContain(s => s.Provider == "test-provider");
     }
@@ -64,7 +64,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<SubjectDto>>(TestJsonOptions.Default);
         result.Should().NotBeNull();
         result!.Items.Should().HaveCountLessOrEqualTo(2);
         result.Skip.Should().Be(0);
@@ -82,7 +82,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var subject = await response.Content.ReadFromJsonAsync<SubjectDetailDto>();
+        var subject = await response.Content.ReadFromJsonAsync<SubjectDetailDto>(TestJsonOptions.Default);
         subject.Should().NotBeNull();
         subject!.ExternalId.Should().Be("admin-user");
         subject.Roles.Should().Contain(r => r.RoleCode == "admin");
@@ -106,7 +106,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var subject = await response.Content.ReadFromJsonAsync<SubjectDetailDto>();
+        var subject = await response.Content.ReadFromJsonAsync<SubjectDetailDto>(TestJsonOptions.Default);
         subject.Should().NotBeNull();
         subject!.ExternalId.Should().Be("admin-user");
     }
@@ -137,7 +137,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var subject = await response.Content.ReadFromJsonAsync<SubjectDto>();
+        var subject = await response.Content.ReadFromJsonAsync<SubjectDto>(TestJsonOptions.Default);
         subject.Should().NotBeNull();
         subject!.ExternalId.Should().Be(request.ExternalId);
         subject.Email.Should().Be("new@test.com");
@@ -159,7 +159,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var subject = await response.Content.ReadFromJsonAsync<SubjectDto>();
+        var subject = await response.Content.ReadFromJsonAsync<SubjectDto>(TestJsonOptions.Default);
         subject.Should().NotBeNull();
         subject!.Email.Should().Be("updated-admin@test.com");
     }
@@ -176,7 +176,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var subject = await response.Content.ReadFromJsonAsync<SubjectDto>();
+        var subject = await response.Content.ReadFromJsonAsync<SubjectDto>(TestJsonOptions.Default);
         subject.Should().NotBeNull();
         subject!.Email.Should().Be("new-email@test.com");
     }
@@ -208,7 +208,7 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Verify deactivation
         var getResponse = await _client.GetAsync($"/api/subjects/{noRoleId}");
-        var subject = await getResponse.Content.ReadFromJsonAsync<SubjectDetailDto>();
+        var subject = await getResponse.Content.ReadFromJsonAsync<SubjectDetailDto>(TestJsonOptions.Default);
         subject!.IsActive.Should().BeFalse();
     }
 
