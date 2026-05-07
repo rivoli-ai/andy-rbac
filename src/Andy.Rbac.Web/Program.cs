@@ -14,8 +14,11 @@ builder.Services.AddServerSideBlazor();
 // Add RBAC client
 builder.Services.AddRbacClient(builder.Configuration);
 
-// Add RBAC API service for admin UI
-var apiBaseUrl = builder.Configuration["Rbac:ApiBaseUrl"] ?? "https://localhost:7003";
+// Add RBAC API service for admin UI. Sourced from compose
+// (Rbac__ApiBaseUrl). In compose this is the internal docker network URL
+// `https://api:8443`; in dev it points at the API's local URL.
+var apiBaseUrl = builder.Configuration["Rbac:ApiBaseUrl"]
+    ?? throw new InvalidOperationException("Rbac:ApiBaseUrl is required (set via Rbac__ApiBaseUrl env var).");
 builder.Services.AddHttpClient<RbacApiService>(client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
@@ -26,8 +29,10 @@ builder.Services.AddHttpClient<RbacApiService>(client =>
     ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
 });
 
-// Configure authentication with OpenID Connect
-var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"] ?? "https://localhost:5001";
+// Configure authentication with OpenID Connect. Sourced from .env / compose
+// (ANDY_AUTH_AUTHORITY → AndyAuth__Authority).
+var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"]
+    ?? throw new InvalidOperationException("AndyAuth:Authority is required (set via ANDY_AUTH_AUTHORITY env var).");
 var andyAuthBrowserAuthority = andyAuthAuthority.Replace("host.docker.internal", "localhost");
 var clientId = builder.Configuration["AndyAuth:ClientId"] ?? "andy-rbac-web";
 var clientSecret = builder.Configuration["AndyAuth:ClientSecret"];
