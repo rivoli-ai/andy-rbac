@@ -30,7 +30,6 @@ services:
       - Auth__Authority=${ANDY_AUTH_AUTHORITY:-https://host.docker.internal:7001}
       - Auth__Audience=${ANDY_AUTH_AUDIENCE:-urn:andy-rbac-api}
       - AndyAuth__Authority=${ANDY_AUTH_AUTHORITY:-https://host.docker.internal:7001}
-      - AndyAuth__DbConnectionString=${ANDY_AUTH_DB_CONNECTION:-Host=host.docker.internal;Port=7435;Database=andy_auth_dev;Username=postgres;Password=postgres}
       - Mcp__ServerUrl=${ANDY_RBAC_API_BASE_URL:-https://host.docker.internal:7003}
       - Cors__Origins__0=https://localhost:5180
       - Cors__Origins__1=http://localhost:5180

@@ -1,5 +1,6 @@
 using Andy.Rbac.Api.Data;
 using Andy.Rbac.Api.Mcp;
+using Andy.Rbac.Api.Middleware;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Infrastructure.Repositories;
@@ -178,6 +179,7 @@ app.UseHttpsRedirection();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<EnsureSubjectMiddleware>();
 
 app.MapControllers();
 app.MapGrpcService<RbacGrpcService>();
@@ -292,41 +294,10 @@ using (var scope = app.Services.CreateScope())
     // Seed super-admin permissions for all resource types
     await DataSeeder.SeedSuperAdminPermissionsAsync(db);
 
-    // Seed dev users with super-admin role (development only).
-    // Reads andy-auth's Postgres directly — sourced from .env / compose
-    // (ANDY_AUTH_DB_CONNECTION → AndyAuth__DbConnectionString). When the
-    // env var is missing or the DB unreachable, falls back to a single
-    // hardcoded test subject. The direct-DB read is a known wart and
-    // tracked as a follow-up to refactor onto the andy-auth API.
-    if (app.Environment.IsDevelopment())
-    {
-        var authDbConn = app.Configuration["AndyAuth:DbConnectionString"];
-        if (string.IsNullOrWhiteSpace(authDbConn))
-        {
-            app.Logger.LogWarning("AndyAuth:DbConnectionString not set; skipping user seeding from Andy.Auth DB.");
-            await DataSeeder.SeedTestSubjectAsync(db, "45abdfa0-da00-4bff-9226-9c91fcda15b1", "test@andy.local");
-        }
-        else
-        {
-            try
-            {
-                using var authConn = new Npgsql.NpgsqlConnection(authDbConn);
-                await authConn.OpenAsync();
-                using var cmd = new Npgsql.NpgsqlCommand(
-                    "SELECT \"Id\", \"Email\" FROM \"AspNetUsers\" WHERE \"IsActive\" = true", authConn);
-                using var reader = await cmd.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
-                {
-                    await DataSeeder.SeedTestSubjectAsync(db, reader.GetString(0), reader.GetString(1));
-                }
-            }
-            catch (Exception ex)
-            {
-                app.Logger.LogWarning(ex, "Could not seed from Andy.Auth DB, using fallback");
-                await DataSeeder.SeedTestSubjectAsync(db, "45abdfa0-da00-4bff-9226-9c91fcda15b1", "test@andy.local");
-            }
-        }
-    }
+    // Real users get their Subject row created lazily on first authenticated
+    // request — see Andy.Rbac.Api.Middleware.EnsureSubjectMiddleware. The
+    // well-known dev test subject (test@andy.local) is upserted by
+    // SeedFromManifestsAsync above when binding the manifest's testUserRole.
 }
 
 app.Run();
