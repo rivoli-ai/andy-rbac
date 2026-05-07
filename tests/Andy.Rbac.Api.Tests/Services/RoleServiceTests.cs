@@ -106,6 +106,56 @@ public class RoleServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_WithValidParentChain_Succeeds()
+    {
+        // Issue #46 — cycle detection should not reject acyclic chains.
+        using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
+        var service = new RoleService(context, _loggerMock.Object);
+
+        var result = await service.CreateAsync(
+            new CreateRoleRequest("inheritor", "Inheritor", null, "test-app", ParentRoleCode: "admin"));
+
+        result.Role.Code.Should().Be("inheritor");
+        result.Role.ParentRoleCode.Should().Be("admin");
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithCyclicParentChain_Throws()
+    {
+        // Issue #46 — if the parent chain has been corrupted such that the
+        // proposed parent ultimately loops back on itself, reject the create.
+        using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
+
+        // Manually build a cyclic chain a → b → a in the DB.
+        var appId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var roleA = new Andy.Rbac.Models.Role
+        {
+            Id = Guid.NewGuid(),
+            ApplicationId = appId,
+            Code = "cycle-a",
+            Name = "Cycle A",
+        };
+        var roleB = new Andy.Rbac.Models.Role
+        {
+            Id = Guid.NewGuid(),
+            ApplicationId = appId,
+            Code = "cycle-b",
+            Name = "Cycle B",
+            ParentRoleId = roleA.Id,
+        };
+        context.Roles.AddRange(roleA, roleB);
+        await context.SaveChangesAsync();
+        roleA.ParentRoleId = roleB.Id;
+        await context.SaveChangesAsync();
+
+        var service = new RoleService(context, _loggerMock.Object);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.CreateAsync(new CreateRoleRequest(
+                "leaf", "Leaf", null, "test-app", ParentRoleCode: "cycle-a")));
+    }
+
+    [Fact]
     public async Task DeleteAsync_WithValidNonSystemRole_DeletesRole()
     {
         // Arrange
