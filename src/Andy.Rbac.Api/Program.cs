@@ -146,18 +146,29 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOpt
 
 builder.Services.AddAuthorization();
 
-// Add CORS
+// Add CORS — fail closed on misconfigured origin lists (issue #50). Wildcards
+// in an AllowCredentials policy are silently rejected by browsers anyway; an
+// empty list in Production usually means a deploy-time config drift. Throwing
+// at startup is louder than logging.
+var configuredCorsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
+Andy.Rbac.Api.Configuration.CorsOriginValidator.Validate(
+    configuredCorsOrigins, builder.Environment.IsDevelopment());
+var effectiveCorsOrigins = configuredCorsOrigins.Length > 0
+    ? configuredCorsOrigins
+    : new[] { "http://localhost:3000" };
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:3000"])
+        policy.WithOrigins(effectiveCorsOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
     });
 
-    // Allow MCP clients (Claude Desktop, Cursor, etc.) to access /mcp endpoints
+    // Allow MCP clients (Claude Desktop, Cursor, etc.) to access /mcp endpoints.
+    // No AllowCredentials here — wildcard origin only works without credentials.
     options.AddPolicy("AllowMcpClients", policy =>
     {
         policy.AllowAnyOrigin()
