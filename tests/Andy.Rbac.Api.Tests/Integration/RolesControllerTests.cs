@@ -24,7 +24,7 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var roles = await response.Content.ReadFromJsonAsync<List<RoleDetail>>();
+        var roles = await response.Content.ReadFromJsonAsync<List<RoleDetail>>(TestJsonOptions.Default);
         roles.Should().NotBeNull();
         roles.Should().Contain(r => r.Code == "admin");
         roles.Should().Contain(r => r.Code == "editor");
@@ -39,7 +39,7 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var roles = await response.Content.ReadFromJsonAsync<List<RoleDetail>>();
+        var roles = await response.Content.ReadFromJsonAsync<List<RoleDetail>>(TestJsonOptions.Default);
         roles.Should().NotBeNull();
         roles.Should().NotBeEmpty();
     }
@@ -55,7 +55,7 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var role = await response.Content.ReadFromJsonAsync<RoleDetail>();
+        var role = await response.Content.ReadFromJsonAsync<RoleDetail>(TestJsonOptions.Default);
         role.Should().NotBeNull();
         role!.Code.Should().Be("admin");
         role.IsSystem.Should().BeTrue();
@@ -79,7 +79,7 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var role = await response.Content.ReadFromJsonAsync<RoleDetail>();
+        var role = await response.Content.ReadFromJsonAsync<RoleDetail>(TestJsonOptions.Default);
         role.Should().NotBeNull();
         role!.Code.Should().Be("admin");
     }
@@ -105,7 +105,7 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var role = await response.Content.ReadFromJsonAsync<RoleDetail>();
+        var role = await response.Content.ReadFromJsonAsync<RoleDetail>(TestJsonOptions.Default);
         role.Should().NotBeNull();
         role!.Code.Should().Be(request.Code);
         role.IsSystem.Should().BeFalse();
@@ -143,7 +143,7 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
         // Arrange - create a non-system role to delete
         var createRequest = new CreateRoleRequest($"delete-role-{Guid.NewGuid():N}", "Delete Me", null, "test-app");
         var createResponse = await _client.PostAsJsonAsync("/api/roles", createRequest);
-        var created = await createResponse.Content.ReadFromJsonAsync<RoleDetail>();
+        var created = await createResponse.Content.ReadFromJsonAsync<RoleDetail>(TestJsonOptions.Default);
 
         // Act
         var response = await _client.DeleteAsync($"/api/roles/{created!.Id}");

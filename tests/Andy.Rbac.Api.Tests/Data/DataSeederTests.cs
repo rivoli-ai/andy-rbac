@@ -44,21 +44,21 @@ public class DataSeederTests
     }
 
     [Fact]
-    public async Task SeedAsync_SeedsApplications()
+    public async Task SeedAsync_SeedsLegacyApplications()
     {
-        // Arrange
+        // SeedAsync only seeds the consumer apps and out-of-scope services
+        // that don't yet ship a config/registration.json. Every other Andy
+        // service (auth, docs, rbac, etc.) is now seeded by
+        // SeedFromManifestsAsync — exercised in the manifest tests below.
         using var context = CreateContext();
 
-        // Act
         await DataSeeder.SeedAsync(context);
 
-        // Assert
         var apps = await context.Applications.ToListAsync();
-        apps.Should().Contain(a => a.Code == "andy-auth");
-        apps.Should().Contain(a => a.Code == "andy-docs");
         apps.Should().Contain(a => a.Code == "andy-cli");
         apps.Should().Contain(a => a.Code == "andy-agentic-web");
-        apps.Should().Contain(a => a.Code == "andy-rbac");
+        apps.Should().Contain(a => a.Code == "subscription");
+        apps.Should().Contain(a => a.Code == "narration");
     }
 
     [Fact]
@@ -91,38 +91,17 @@ public class DataSeederTests
         var actions = await context.Actions.Where(a => a.Code == "read").ToListAsync();
         actions.Should().ContainSingle();
 
-        var apps = await context.Applications.Where(a => a.Code == "andy-docs").ToListAsync();
+        // Use a legacy app that SeedAsync still seeds directly. andy-docs is
+        // manifest-driven now, so it would be absent here.
+        var apps = await context.Applications.Where(a => a.Code == "andy-cli").ToListAsync();
         apps.Should().ContainSingle();
 
         var roles = await context.Roles.Where(r => r.Code == "super-admin" && r.ApplicationId == null).ToListAsync();
         roles.Should().ContainSingle();
     }
 
-    [Fact]
-    public async Task SeedApplicationDataAsync_WithAndyDocs_SeedsResourceTypesAndRoles()
-    {
-        // Arrange
-        using var context = CreateContext();
-        await DataSeeder.SeedAsync(context);
-
-        // Act
-        await DataSeeder.SeedApplicationDataAsync(context, "andy-docs");
-
-        // Assert
-        var app = await context.Applications
-            .Include(a => a.ResourceTypes)
-            .Include(a => a.Roles)
-            .FirstOrDefaultAsync(a => a.Code == "andy-docs");
-
-        app.Should().NotBeNull();
-        app!.ResourceTypes.Should().Contain(rt => rt.Code == "document");
-        app.ResourceTypes.Should().Contain(rt => rt.Code == "collection");
-        app.ResourceTypes.Should().Contain(rt => rt.Code == "template");
-
-        app.Roles.Should().Contain(r => r.Code == "admin");
-        app.Roles.Should().Contain(r => r.Code == "editor");
-        app.Roles.Should().Contain(r => r.Code == "viewer");
-    }
+    // SeedApplicationDataAsync_WithAndyDocs_*: removed — andy-docs is now
+    // manifest-driven via SeedFromManifestsAsync.
 
     [Fact]
     public async Task SeedApplicationDataAsync_WithAndyCli_SeedsResourceTypesAndRoles()
@@ -150,30 +129,8 @@ public class DataSeederTests
         app.Roles.Should().Contain(r => r.Code == "restricted");
     }
 
-    [Fact]
-    public async Task SeedApplicationDataAsync_WithAndyAuth_SeedsResourceTypesAndRoles()
-    {
-        // Arrange
-        using var context = CreateContext();
-        await DataSeeder.SeedAsync(context);
-
-        // Act
-        await DataSeeder.SeedApplicationDataAsync(context, "andy-auth");
-
-        // Assert
-        var app = await context.Applications
-            .Include(a => a.ResourceTypes)
-            .Include(a => a.Roles)
-            .FirstOrDefaultAsync(a => a.Code == "andy-auth");
-
-        app.Should().NotBeNull();
-        app!.ResourceTypes.Should().Contain(rt => rt.Code == "user");
-        app.ResourceTypes.Should().Contain(rt => rt.Code == "client");
-        app.ResourceTypes.Should().Contain(rt => rt.Code == "scope");
-
-        app.Roles.Should().Contain(r => r.Code == "admin");
-        app.Roles.Should().Contain(r => r.Code == "user-manager");
-    }
+    // SeedApplicationDataAsync_WithAndyAuth_*: removed — andy-auth is now
+    // manifest-driven via SeedFromManifestsAsync.
 
     [Fact]
     public async Task SeedApplicationDataAsync_WithAndyAgenticWeb_SeedsResourceTypesAndRoles()
@@ -214,39 +171,34 @@ public class DataSeederTests
     [Fact]
     public async Task SeedApplicationDataAsync_IsIdempotent()
     {
-        // Arrange
         using var context = CreateContext();
         await DataSeeder.SeedAsync(context);
 
-        // Act - run twice
-        await DataSeeder.SeedApplicationDataAsync(context, "andy-docs");
-        await DataSeeder.SeedApplicationDataAsync(context, "andy-docs");
+        // andy-cli is one of the legacy apps still handled by
+        // SeedApplicationDataAsync's switch.
+        await DataSeeder.SeedApplicationDataAsync(context, "andy-cli");
+        await DataSeeder.SeedApplicationDataAsync(context, "andy-cli");
 
-        // Assert - should not create duplicates
         var app = await context.Applications
             .Include(a => a.ResourceTypes)
             .Include(a => a.Roles)
-            .FirstOrDefaultAsync(a => a.Code == "andy-docs");
+            .FirstOrDefaultAsync(a => a.Code == "andy-cli");
 
-        var docTypes = app!.ResourceTypes.Where(rt => rt.Code == "document").ToList();
-        docTypes.Should().ContainSingle();
-
-        var adminRoles = app.Roles.Where(r => r.Code == "admin").ToList();
-        adminRoles.Should().ContainSingle();
+        app!.ResourceTypes.Where(rt => rt.Code == "config").Should().ContainSingle();
+        app.Roles.Where(r => r.Code == "admin").Should().ContainSingle();
     }
 
     [Fact]
     public async Task SeedApplicationDataAsync_ResourceTypes_HaveCorrectSupportsInstancesValue()
     {
-        // Arrange
         using var context = CreateContext();
         await DataSeeder.SeedAsync(context);
-        await DataSeeder.SeedApplicationDataAsync(context, "andy-docs");
         await DataSeeder.SeedApplicationDataAsync(context, "andy-cli");
 
-        // Assert
-        var docType = await context.ResourceTypes.FirstOrDefaultAsync(rt => rt.Code == "document");
-        docType!.SupportsInstances.Should().BeTrue();
+        // Different apps mark different types as instance-capable; verify
+        // that nuance survives seeding.
+        var sessionType = await context.ResourceTypes.FirstOrDefaultAsync(rt => rt.Code == "session");
+        sessionType!.SupportsInstances.Should().BeTrue();
 
         var configType = await context.ResourceTypes.FirstOrDefaultAsync(rt => rt.Code == "config");
         configType!.SupportsInstances.Should().BeFalse();
@@ -273,15 +225,13 @@ public class DataSeederTests
     [Fact]
     public async Task SeedApplicationDataAsync_Roles_AreSystemRoles()
     {
-        // Arrange
         using var context = CreateContext();
         await DataSeeder.SeedAsync(context);
-        await DataSeeder.SeedApplicationDataAsync(context, "andy-docs");
+        await DataSeeder.SeedApplicationDataAsync(context, "andy-cli");
 
-        // Assert
         var app = await context.Applications
             .Include(a => a.Roles)
-            .FirstOrDefaultAsync(a => a.Code == "andy-docs");
+            .FirstOrDefaultAsync(a => a.Code == "andy-cli");
 
         app!.Roles.Should().OnlyContain(r => r.IsSystem);
     }
