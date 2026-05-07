@@ -35,10 +35,12 @@ public class RbacHttpClient : IRbacClient
         string? resourceInstanceId = null,
         CancellationToken ct = default)
     {
-        // Check cache first (only for simple cases without groups)
-        if (_options.Cache.Enabled && resourceInstanceId == null && groups == null)
+        // Check cache. Key includes groups so different group sets don't
+        // collide; resourceInstanceId checks bypass the cache because they
+        // depend on per-instance state we don't store here.
+        if (_options.Cache.Enabled && resourceInstanceId == null)
         {
-            var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, ct);
+            var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, applicationCode: null, groups, ct);
             if (cachedPermissions != null)
             {
                 var normalizedPermission = NormalizePermission(permission);
@@ -70,10 +72,9 @@ public class RbacHttpClient : IRbacClient
     {
         var normalizedPermissions = permissions.Select(NormalizePermission).ToList();
 
-        // Check cache first (only for simple cases without groups)
-        if (_options.Cache.Enabled && resourceInstanceId == null && groups == null)
+        if (_options.Cache.Enabled && resourceInstanceId == null)
         {
-            var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, ct);
+            var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, applicationCode: null, groups, ct);
             if (cachedPermissions != null)
             {
                 return normalizedPermissions.Any(p => cachedPermissions.Contains(p));
@@ -103,10 +104,9 @@ public class RbacHttpClient : IRbacClient
     {
         var normalizedPermissions = permissions.Select(NormalizePermission).ToList();
 
-        // Check cache first (only for simple cases without groups)
-        if (_options.Cache.Enabled && resourceInstanceId == null && groups == null)
+        if (_options.Cache.Enabled && resourceInstanceId == null)
         {
-            var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, ct);
+            var cachedPermissions = await _cache.GetPermissionsAsync(subjectId, applicationCode: null, groups, ct);
             if (cachedPermissions != null)
             {
                 return normalizedPermissions.All(p => cachedPermissions.Contains(p));
@@ -128,10 +128,9 @@ public class RbacHttpClient : IRbacClient
         string? applicationCode = null,
         CancellationToken ct = default)
     {
-        // Check cache (only for simple cases without groups)
-        if (_options.Cache.Enabled && applicationCode == null && groups == null)
+        if (_options.Cache.Enabled)
         {
-            var cached = await _cache.GetPermissionsAsync(subjectId, ct);
+            var cached = await _cache.GetPermissionsAsync(subjectId, applicationCode, groups, ct);
             if (cached != null)
                 return cached;
         }
@@ -151,10 +150,9 @@ public class RbacHttpClient : IRbacClient
         var result = await response.Content.ReadFromJsonAsync<GetPermissionsResponse>(ct);
         var permissions = result?.Permissions ?? [];
 
-        // Cache results (only for simple cases without groups)
-        if (_options.Cache.Enabled && applicationCode == null && groups == null)
+        if (_options.Cache.Enabled)
         {
-            await _cache.SetPermissionsAsync(subjectId, permissions, ct);
+            await _cache.SetPermissionsAsync(subjectId, permissions, applicationCode, groups, ct);
         }
 
         return permissions;
@@ -166,10 +164,9 @@ public class RbacHttpClient : IRbacClient
         string? applicationCode = null,
         CancellationToken ct = default)
     {
-        // Check cache (only for simple cases without groups)
-        if (_options.Cache.Enabled && applicationCode == null && groups == null)
+        if (_options.Cache.Enabled)
         {
-            var cached = await _cache.GetRolesAsync(subjectId, ct);
+            var cached = await _cache.GetRolesAsync(subjectId, applicationCode, groups, ct);
             if (cached != null)
                 return cached;
         }
@@ -189,10 +186,9 @@ public class RbacHttpClient : IRbacClient
         var result = await response.Content.ReadFromJsonAsync<GetRolesResponse>(ct);
         var roles = result?.Roles ?? [];
 
-        // Cache results (only for simple cases without groups)
-        if (_options.Cache.Enabled && applicationCode == null && groups == null)
+        if (_options.Cache.Enabled)
         {
-            await _cache.SetRolesAsync(subjectId, roles, ct);
+            await _cache.SetRolesAsync(subjectId, roles, applicationCode, groups, ct);
         }
 
         return roles;
