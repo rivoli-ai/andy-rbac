@@ -15,6 +15,13 @@ public class RbacWebApplicationFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Program.cs requires these config values (no hardcoded fallbacks).
+        // Use loopback placeholders — tests don't actually call andy-auth.
+        builder.UseSetting("Mcp:ServerUrl", "https://localhost:0");
+        builder.UseSetting("AndyAuth:Authority", "https://localhost:0");
+        builder.UseSetting("Auth:Authority", "https://localhost:0");
+        builder.UseSetting("Auth:Audience", "urn:andy-rbac-api");
+
         builder.ConfigureServices(services =>
         {
             // Remove the existing DbContext registration
