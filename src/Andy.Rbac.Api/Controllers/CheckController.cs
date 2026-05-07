@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Andy.Rbac.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,8 +10,7 @@ namespace Andy.Rbac.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-// Note: Auth temporarily disabled for development/testing
-// [Authorize]
+[Authorize]
 public class CheckController : ControllerBase
 {
     private readonly IPermissionEvaluator _evaluator;
@@ -23,8 +23,27 @@ public class CheckController : ControllerBase
     }
 
     /// <summary>
+    /// Group memberships are sourced from the validated JWT (issue #45) when
+    /// the request is checking the caller's own subject. For checks targeting
+    /// other subjects, group claims from the caller's token do not apply —
+    /// only directly-granted permissions are considered. Stored group
+    /// memberships per subject are tracked separately (out of scope here).
+    /// </summary>
+    private List<string>? GroupsForSubject(string subjectExternalId)
+    {
+        var callerSub = User.FindFirst("sub")?.Value
+            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (callerSub is null || !string.Equals(callerSub, subjectExternalId, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var groups = User.FindAll("groups").Select(c => c.Value).ToList();
+        return groups.Count > 0 ? groups : null;
+    }
+
+    /// <summary>
     /// Checks if a subject has a specific permission.
-    /// Groups are optional and represent group memberships from the token.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(CheckPermissionResponse), StatusCodes.Status200OK)]
@@ -33,7 +52,7 @@ public class CheckController : ControllerBase
         var result = await _evaluator.CheckPermissionAsync(
             request.SubjectId,
             request.Permission,
-            request.Groups,
+            GroupsForSubject(request.SubjectId),
             request.ResourceInstanceId,
             ct);
 
@@ -46,7 +65,6 @@ public class CheckController : ControllerBase
 
     /// <summary>
     /// Checks if a subject has any of the specified permissions.
-    /// Groups are optional and represent group memberships from the token.
     /// </summary>
     [HttpPost("any")]
     [ProducesResponseType(typeof(CheckPermissionResponse), StatusCodes.Status200OK)]
@@ -55,7 +73,7 @@ public class CheckController : ControllerBase
         var result = await _evaluator.CheckAnyPermissionAsync(
             request.SubjectId,
             request.Permissions,
-            request.Groups,
+            GroupsForSubject(request.SubjectId),
             request.ResourceInstanceId,
             ct);
 
@@ -68,35 +86,29 @@ public class CheckController : ControllerBase
 
     /// <summary>
     /// Gets all permissions for a subject.
-    /// Groups query parameter can be comma-separated list of group codes.
     /// </summary>
     [HttpGet("permissions/{subjectId}")]
     [ProducesResponseType(typeof(GetPermissionsResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPermissions(
         string subjectId,
-        [FromQuery] string? groups,
         [FromQuery] string? applicationCode,
         CancellationToken ct)
     {
-        var groupList = string.IsNullOrEmpty(groups) ? null : groups.Split(',').Select(g => g.Trim()).ToList();
-        var permissions = await _evaluator.GetPermissionsAsync(subjectId, groupList, applicationCode, ct);
+        var permissions = await _evaluator.GetPermissionsAsync(subjectId, GroupsForSubject(subjectId), applicationCode, ct);
         return Ok(new GetPermissionsResponse { Permissions = permissions.ToList() });
     }
 
     /// <summary>
     /// Gets all roles for a subject.
-    /// Groups query parameter can be comma-separated list of group codes.
     /// </summary>
     [HttpGet("roles/{subjectId}")]
     [ProducesResponseType(typeof(GetRolesResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles(
         string subjectId,
-        [FromQuery] string? groups,
         [FromQuery] string? applicationCode,
         CancellationToken ct)
     {
-        var groupList = string.IsNullOrEmpty(groups) ? null : groups.Split(',').Select(g => g.Trim()).ToList();
-        var roles = await _evaluator.GetRolesAsync(subjectId, groupList, applicationCode, ct);
+        var roles = await _evaluator.GetRolesAsync(subjectId, GroupsForSubject(subjectId), applicationCode, ct);
         return Ok(new GetRolesResponse { Roles = roles.ToList() });
     }
 }
@@ -106,12 +118,10 @@ public class CheckController : ControllerBase
 /// </summary>
 /// <param name="SubjectId">External ID of the subject (user).</param>
 /// <param name="Permission">Permission code in format "app:resource:action".</param>
-/// <param name="Groups">Optional group codes from token claims. Permissions are checked for subject + all groups.</param>
 /// <param name="ResourceInstanceId">Optional resource instance ID for instance-level checks.</param>
 public record CheckPermissionRequest(
     string SubjectId,
     string Permission,
-    List<string>? Groups = null,
     string? ResourceInstanceId = null);
 
 /// <summary>
@@ -120,7 +130,6 @@ public record CheckPermissionRequest(
 public record CheckAnyPermissionRequest(
     string SubjectId,
     List<string> Permissions,
-    List<string>? Groups = null,
     string? ResourceInstanceId = null);
 
 public record CheckPermissionResponse { public bool Allowed { get; init; } public string? Reason { get; init; } }

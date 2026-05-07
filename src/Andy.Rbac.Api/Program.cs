@@ -181,8 +181,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<EnsureSubjectMiddleware>();
 
-app.MapControllers();
-app.MapGrpcService<RbacGrpcService>();
+app.MapControllers().RequireAuthorization();
+app.MapGrpcService<RbacGrpcService>().RequireAuthorization();
 
 // Map MCP Server endpoint at /mcp with permissive CORS for MCP clients
 // Require authorization so clients (e.g., Claude Desktop) receive an OAuth challenge
