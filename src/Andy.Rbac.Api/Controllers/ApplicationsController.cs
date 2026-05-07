@@ -9,8 +9,7 @@ namespace Andy.Rbac.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-// Note: Auth temporarily disabled for development/testing
-// [Authorize]
+[Authorize]
 public class ApplicationsController : ControllerBase
 {
     private readonly IApplicationService _applicationService;
@@ -24,7 +23,6 @@ public class ApplicationsController : ControllerBase
     /// Gets all registered applications.
     /// </summary>
     [HttpGet]
-    [AllowAnonymous] // Allow listing for testing
     [ProducesResponseType(typeof(ApplicationResult), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetApplications(CancellationToken ct)
     {
@@ -36,7 +34,6 @@ public class ApplicationsController : ControllerBase
     /// Gets an application by ID with full details.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(ApplicationDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetApplication(Guid id, CancellationToken ct)
@@ -52,7 +49,6 @@ public class ApplicationsController : ControllerBase
     /// Gets an application by code.
     /// </summary>
     [HttpGet("by-code/{code}")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(ApplicationDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetApplicationByCode(string code, CancellationToken ct)

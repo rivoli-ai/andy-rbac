@@ -1,6 +1,8 @@
 using Andy.Rbac.Infrastructure.Data;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -44,6 +46,16 @@ public class RbacWebApplicationFactory : WebApplicationFactory<Program>
 
             // Seed test data
             TestDbContextFactory.SeedTestDataAsync(db).GetAwaiter().GetResult();
+        });
+
+        // Replace the auth scheme with a test handler that always succeeds
+        // as a fixed in-memory test user. Runs in ConfigureTestServices so
+        // it overrides Program.cs's Bearer/MCP scheme registration.
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddAuthentication(TestAuthHandler.SchemeName)
+                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
+                    TestAuthHandler.SchemeName, _ => { });
         });
 
         builder.UseEnvironment("Testing");

@@ -9,8 +9,7 @@ namespace Andy.Rbac.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-// Note: Auth temporarily disabled for development/testing
-// [Authorize]
+[Authorize]
 public class RolesController : ControllerBase
 {
     private readonly IRoleService _roleService;
@@ -24,7 +23,6 @@ public class RolesController : ControllerBase
     /// Gets all roles, optionally filtered by application.
     /// </summary>
     [HttpGet]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(List<RoleDetail>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRoles([FromQuery] string? applicationCode, CancellationToken ct)
     {
@@ -36,7 +34,6 @@ public class RolesController : ControllerBase
     /// Gets a role by ID.
     /// </summary>
     [HttpGet("{id:guid}")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(RoleDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetRole(Guid id, CancellationToken ct)
@@ -52,7 +49,6 @@ public class RolesController : ControllerBase
     /// Gets a role by code.
     /// </summary>
     [HttpGet("by-code/{code}")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(RoleDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetRoleByCode(string code, [FromQuery] string? applicationCode, CancellationToken ct)

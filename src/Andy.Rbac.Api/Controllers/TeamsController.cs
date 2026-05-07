@@ -11,8 +11,7 @@ namespace Andy.Rbac.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-// Note: Auth temporarily disabled for development/testing
-// [Authorize]
+[Authorize]
 public class TeamsController : ControllerBase
 {
     private readonly RbacDbContext _db;
