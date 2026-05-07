@@ -312,13 +312,17 @@ public class DataSeederTests
         }
         """;
 
-    private static IConfiguration ConfigurationWithManifest(string manifestPath, string env = "Development")
+    private static IConfiguration ConfigurationWithManifest(
+        string manifestPath,
+        string env = "Development",
+        bool allowTestUserSeed = true)
     {
         return new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ASPNETCORE_ENVIRONMENT"] = env,
                 ["Registrations:ManifestPaths:0"] = manifestPath,
+                ["Rbac:AllowTestUserSeed"] = allowTestUserSeed ? "true" : "false",
             })
             .Build();
     }
@@ -398,6 +402,32 @@ public class DataSeederTests
 
             // Application + roles still seed normally; only the testUserRole
             // binding is skipped.
+            (await context.Applications.AnyAsync(a => a.Code == "andy-policies-test")).Should().BeTrue();
+            (await context.Subjects.AnyAsync(s => s.ExternalId == DataSeeder.TestUserWellKnownExternalId))
+                .Should().BeFalse();
+            (await context.SubjectRoles.AnyAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_WithoutAllowTestUserSeedFlag_SkipsBinding()
+    {
+        // Issue #49: even in Development, the binding requires an explicit
+        // Rbac:AllowTestUserSeed=true opt-in. A leaked Development env alone
+        // is not enough to activate the well-known test subject.
+        using var context = CreateContext();
+        var manifestPath = WriteTempManifest(SampleManifestWithTestUserRole);
+        try
+        {
+            var config = ConfigurationWithManifest(manifestPath, env: "Development", allowTestUserSeed: false);
+            var logger = NullLogger.Instance;
+
+            await DataSeeder.SeedFromManifestsAsync(context, config, logger);
+
             (await context.Applications.AnyAsync(a => a.Code == "andy-policies-test")).Should().BeTrue();
             (await context.Subjects.AnyAsync(s => s.ExternalId == DataSeeder.TestUserWellKnownExternalId))
                 .Should().BeFalse();
