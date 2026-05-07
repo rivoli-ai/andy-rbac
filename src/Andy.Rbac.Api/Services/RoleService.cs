@@ -106,6 +106,14 @@ public class RoleService : IRoleService
             if (parent == null)
                 throw new InvalidOperationException($"Parent role '{request.ParentRoleCode}' not found");
             parentRoleId = parent.Id;
+
+            // Defense-in-depth (issue #46): walk the proposed parent chain to
+            // confirm no cycle exists in the graph we'd be inserting into.
+            // For a brand-new Create the new role can't have any incoming
+            // ParentRoleId references, so a cycle through it is impossible —
+            // but the helper is reused on Update if/when that endpoint is added,
+            // and a corrupt parent chain should be rejected loudly anyway.
+            await EnsureParentChainIsAcyclicAsync(parent.Id, ct);
         }
 
         var role = new Role
@@ -132,6 +140,37 @@ public class RoleService : IRoleService
             request.ParentRoleCode,
             role.IsSystem,
             []));
+    }
+
+    /// <summary>
+    /// Walks the parent chain starting from <paramref name="startId"/>, throwing
+    /// <see cref="InvalidOperationException"/> if any role is encountered twice
+    /// (i.e. a cycle exists). Bounded depth defends against pathological cases.
+    /// </summary>
+    private async Task EnsureParentChainIsAcyclicAsync(Guid startId, CancellationToken ct)
+    {
+        const int maxDepth = 32;
+        var visited = new HashSet<Guid>();
+        Guid? current = startId;
+        for (int d = 0; d < maxDepth && current.HasValue; d++)
+        {
+            if (!visited.Add(current.Value))
+            {
+                throw new InvalidOperationException(
+                    $"Role parent chain contains a cycle at role {current.Value}.");
+            }
+
+            current = await _db.Roles
+                .Where(r => r.Id == current.Value)
+                .Select(r => r.ParentRoleId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (current.HasValue)
+        {
+            throw new InvalidOperationException(
+                $"Role parent chain exceeds the maximum depth of {maxDepth}.");
+        }
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)

@@ -13,6 +13,35 @@ public class PermissionRepository : IPermissionRepository
         _db = db;
     }
 
+    /// <summary>
+    /// Expand a starting set of role IDs to include all of their ancestors
+    /// (parents, grandparents, ...) walking the <c>ParentRoleId</c> chain.
+    /// Cycle-safe — the loop terminates as soon as a frontier yields no new
+    /// IDs. Bounded depth defends against accidentally-deep hierarchies.
+    /// </summary>
+    private async Task<HashSet<Guid>> ExpandToAncestorsAsync(
+        IEnumerable<Guid> roleIds,
+        CancellationToken ct)
+    {
+        const int maxDepth = 32;
+        var closure = new HashSet<Guid>(roleIds);
+        var frontier = new HashSet<Guid>(closure);
+        for (int d = 0; d < maxDepth && frontier.Count > 0; d++)
+        {
+            var parents = await _db.Roles
+                .Where(r => frontier.Contains(r.Id) && r.ParentRoleId != null)
+                .Select(r => r.ParentRoleId!.Value)
+                .Distinct()
+                .ToListAsync(ct);
+
+            var newOnes = parents.Where(p => !closure.Contains(p)).ToList();
+            if (newOnes.Count == 0) break;
+            foreach (var p in newOnes) closure.Add(p);
+            frontier = new HashSet<Guid>(newOnes);
+        }
+        return closure;
+    }
+
     public async Task<IReadOnlyList<string>> GetPermissionsForSubjectAsync(
         Guid subjectId,
         string? applicationCode = null,
@@ -31,11 +60,14 @@ public class PermissionRepository : IPermissionRepository
         if (!roleIds.Any())
             return [];
 
-        // Get permissions from these roles (including parent roles up to 3 levels)
+        // Inheritance: a subject with role R holds the permissions of R
+        // and of every ancestor of R (via ParentRoleId). Expand the assigned
+        // set to include all ancestors, then match RolePermissions against
+        // that expanded set.
+        var effectiveRoleIds = await ExpandToAncestorsAsync(roleIds, ct);
+
         var query = _db.RolePermissions
-            .Where(rp => roleIds.Contains(rp.RoleId) ||
-                        (rp.Role.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRoleId.Value)) ||
-                        (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+            .Where(rp => effectiveRoleIds.Contains(rp.RoleId))
             .Include(rp => rp.Permission)
             .ThenInclude(p => p.ResourceType)
             .ThenInclude(rt => rt.Application)
@@ -112,11 +144,10 @@ public class PermissionRepository : IPermissionRepository
         }
         else
         {
-            // Check role-based permissions (including parent roles)
+            // Inherit ancestors (see ExpandToAncestorsAsync).
+            var effectiveRoleIds = await ExpandToAncestorsAsync(roleIds, ct);
             var hasRolePermission = await _db.RolePermissions
-                .Where(rp => roleIds.Contains(rp.RoleId) ||
-                            (rp.Role.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRoleId.Value)) ||
-                            (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIds.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+                .Where(rp => effectiveRoleIds.Contains(rp.RoleId))
                 .AnyAsync(rp =>
                     rp.Permission.ResourceType.Application != null &&
                     rp.Permission.ResourceType.Application.Code == appCode &&
@@ -183,10 +214,10 @@ public class PermissionRepository : IPermissionRepository
         if (!roleIdList.Any())
             return [];
 
+        var effectiveRoleIds = await ExpandToAncestorsAsync(roleIdList, ct);
+
         var query = _db.RolePermissions
-            .Where(rp => roleIdList.Contains(rp.RoleId) ||
-                        (rp.Role.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRoleId.Value)) ||
-                        (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+            .Where(rp => effectiveRoleIds.Contains(rp.RoleId))
             .Include(rp => rp.Permission)
             .ThenInclude(p => p.ResourceType)
             .ThenInclude(rt => rt.Application)
@@ -225,11 +256,10 @@ public class PermissionRepository : IPermissionRepository
         var resourceCode = parts[1];
         var actionCode = parts[2];
 
-        // Check role-based permissions (including parent roles)
+        var effectiveRoleIds = await ExpandToAncestorsAsync(roleIdList, ct);
+
         return await _db.RolePermissions
-            .Where(rp => roleIdList.Contains(rp.RoleId) ||
-                        (rp.Role.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRoleId.Value)) ||
-                        (rp.Role.ParentRole != null && rp.Role.ParentRole.ParentRoleId != null && roleIdList.Contains(rp.Role.ParentRole.ParentRoleId.Value)))
+            .Where(rp => effectiveRoleIds.Contains(rp.RoleId))
             .AnyAsync(rp =>
                 rp.Permission.ResourceType.Application != null &&
                 rp.Permission.ResourceType.Application.Code == appCode &&
