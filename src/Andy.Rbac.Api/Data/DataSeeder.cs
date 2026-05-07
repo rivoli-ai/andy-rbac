@@ -119,22 +119,32 @@ public static class DataSeeder
         ILogger logger,
         CancellationToken ct)
     {
-        // Match the same env-var convention used elsewhere in the seeder (andy-auth's
-        // DbSeeder uses the same lookup). Falls back to "Production" — fail-closed.
+        // Defense-in-depth gate (issue #49): the binding requires BOTH a
+        // non-Production environment AND an explicit `Rbac:AllowTestUserSeed`
+        // opt-in. A leaked `ASPNETCORE_ENVIRONMENT=Development` to a real
+        // deployment alone is no longer enough to activate the well-known
+        // backdoor subject — the operator would also have to flip the
+        // explicit flag.
         var environment = configuration.GetValue<string>("ASPNETCORE_ENVIRONMENT")
             ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
             ?? "Production";
-        if (string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase))
+        var allowTestUserSeed = configuration.GetValue<bool>("Rbac:AllowTestUserSeed");
+        var isProduction = string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
+
+        if (isProduction || !allowTestUserSeed)
         {
             // Walk the manifests once to log which bindings were skipped — operators
-            // running a misconfigured Production deployment should see them in logs.
+            // running a misconfigured deployment should see them in logs.
+            var reason = isProduction
+                ? "environment is Production"
+                : "Rbac:AllowTestUserSeed is not set";
             foreach (var m in manifests)
             {
                 if (!string.IsNullOrWhiteSpace(m.Rbac?.TestUserRole))
                 {
                     logger.LogInformation(
-                        "[manifest] Skipping testUserRole binding ({Role}) on {App} — environment is Production.",
-                        m.Rbac.TestUserRole, m.Rbac.ApplicationCode);
+                        "[manifest] Skipping testUserRole binding ({Role}) on {App} — {Reason}.",
+                        m.Rbac.TestUserRole, m.Rbac.ApplicationCode, reason);
                 }
             }
             return;
