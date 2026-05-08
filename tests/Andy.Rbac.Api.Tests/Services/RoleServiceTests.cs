@@ -15,7 +15,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act
         var result = await service.GetAllAsync();
@@ -32,7 +32,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act
         var result = await service.GetAllAsync("test-app");
@@ -47,7 +47,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
         var roleId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
         // Act
@@ -64,7 +64,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act
         var result = await service.GetByIdAsync(Guid.NewGuid());
@@ -78,7 +78,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
         var request = new CreateRoleRequest("new-role", "New Role", "Description", "test-app");
 
         // Act
@@ -97,7 +97,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
         var request = new CreateRoleRequest("new-role", "New Role", null, "non-existent-app");
 
         // Act & Assert
@@ -110,7 +110,7 @@ public class RoleServiceTests
     {
         // Issue #46 — cycle detection should not reject acyclic chains.
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         var result = await service.CreateAsync(
             new CreateRoleRequest("inheritor", "Inheritor", null, "test-app", ParentRoleCode: "admin"));
@@ -148,7 +148,7 @@ public class RoleServiceTests
         roleA.ParentRoleId = roleB.Id;
         await context.SaveChangesAsync();
 
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.CreateAsync(new CreateRoleRequest(
@@ -160,7 +160,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Create a non-system role to delete
         var created = await service.CreateAsync(new CreateRoleRequest("to-delete", "To Delete", null, "test-app"));
@@ -177,7 +177,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
         var adminRoleId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
         // Act & Assert
@@ -190,7 +190,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act - assign editor role to no-role user
         var result = await service.AssignToSubjectAsync("no-role-user", "editor");
@@ -204,7 +204,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act - try to assign admin role to admin user again
         var result = await service.AssignToSubjectAsync("admin-user", "admin");
@@ -218,7 +218,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act
         var result = await service.AssignToSubjectAsync("non-existent-user", "admin");
@@ -233,7 +233,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act
         var result = await service.AssignToSubjectAsync("admin-user", "non-existent-role");
@@ -248,7 +248,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act - revoke admin role from admin user
         var result = await service.RevokeFromSubjectAsync("admin-user", "admin");
@@ -262,7 +262,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act - try to revoke role that isn't assigned
         var result = await service.RevokeFromSubjectAsync("viewer-user", "admin");
@@ -276,7 +276,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Act
         var result = await service.AssignToTeamAsync("test-team", "viewer");
@@ -290,7 +290,7 @@ public class RoleServiceTests
     {
         // Arrange
         using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
-        var service = new RoleService(context, _loggerMock.Object);
+        var service = new RoleService(context, _loggerMock.Object, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         // Assign once
         await service.AssignToTeamAsync("test-team", "viewer");

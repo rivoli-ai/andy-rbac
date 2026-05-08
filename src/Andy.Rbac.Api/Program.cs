@@ -3,7 +3,9 @@ using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Middleware;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Infrastructure.Data;
+using Andy.Rbac.Infrastructure.Messaging;
 using Andy.Rbac.Infrastructure.Repositories;
+using Andy.Rbac.Messaging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore.Authentication;
@@ -56,6 +58,33 @@ builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
+
+// Epic AL — NATS messaging substrate.
+//
+// AL1: IMessageBus (NATS or in-memory). The InMemoryMessageBus default
+//      keeps tests + the embedded Conductor launcher running without
+//      needing nats-server up. Production wiring binds Messaging:Nats
+//      and swaps in NatsMessageBus + NatsStreamProvisioner.
+// AL2: OutboxDispatcher background worker drains the OutboxEntry table
+//      to whichever IMessageBus is registered.
+// AL3 + AL4: IRbacEventPublisher stages outbox rows for Role/SubjectRole
+//      events; RoleService is the only caller today.
+builder.Services.Configure<NatsOptions>(builder.Configuration.GetSection(NatsOptions.SectionName));
+builder.Services.Configure<OutboxDispatcherOptions>(builder.Configuration.GetSection(OutboxDispatcherOptions.SectionName));
+
+var natsUrl = builder.Configuration[$"{NatsOptions.SectionName}:Url"];
+if (!string.IsNullOrWhiteSpace(natsUrl))
+{
+    builder.Services.AddSingleton<IMessageBus, NatsMessageBus>();
+    builder.Services.AddHostedService<NatsStreamProvisioner>();
+}
+else
+{
+    builder.Services.AddSingleton<IMessageBus, InMemoryMessageBus>();
+}
+
+builder.Services.AddScoped<IRbacEventPublisher, RbacEventPublisher>();
+builder.Services.AddHostedService<OutboxDispatcher>();
 
 // Add MCP Server for AI assistant integration
 builder.Services
