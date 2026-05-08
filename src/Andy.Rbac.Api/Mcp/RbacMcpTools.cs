@@ -17,6 +17,7 @@ public class RbacMcpTools
     private readonly IRoleService _roleService;
     private readonly ITeamService _teamService;
     private readonly ISubjectService _subjectService;
+    private readonly IPolicyService _policyService;
     private readonly ILogger<RbacMcpTools> _logger;
 
     public RbacMcpTools(
@@ -25,6 +26,7 @@ public class RbacMcpTools
         IRoleService roleService,
         ITeamService teamService,
         ISubjectService subjectService,
+        IPolicyService policyService,
         ILogger<RbacMcpTools> logger)
     {
         _evaluator = evaluator;
@@ -32,6 +34,7 @@ public class RbacMcpTools
         _roleService = roleService;
         _teamService = teamService;
         _subjectService = subjectService;
+        _policyService = policyService;
         _logger = logger;
     }
 
@@ -262,6 +265,36 @@ public class RbacMcpTools
         _logger.LogInformation("MCP: Created user {ExternalId}", externalId);
         return new McpUserInfo(subject.Id, subject.ExternalId, subject.Provider, subject.Email, subject.DisplayName, subject.IsActive);
     }
+
+    // ==================== Policy Catalog ====================
+    // V7: read-only access to the policy catalog. Mutating operations stay
+    // on the REST surface so they go through normal admin auth, not MCP.
+
+    [McpServerTool]
+    [Description("List policies in the RBAC catalog (read-only, write-branch, sandboxed, no-prod, high-risk, draft-only, plus any tenant-defined policies).")]
+    public async Task<List<McpPolicyInfo>> ListPolicies()
+    {
+        var result = await _policyService.GetAllAsync();
+        return result.Policies.Select(MapToMcp).ToList();
+    }
+
+    [McpServerTool]
+    [Description("Get a policy by code (e.g., 'high-risk', 'no-prod') with full rule body.")]
+    public async Task<McpPolicyInfo?> GetPolicy(
+        [Description("Policy code (e.g., 'high-risk')")] string code)
+    {
+        var result = await _policyService.GetByCodeAsync(code);
+        return result == null ? null : MapToMcp(result.Policy);
+    }
+
+    private static McpPolicyInfo MapToMcp(PolicyDetail p) => new(
+        p.Id,
+        p.Code,
+        p.Name,
+        p.Criticality.ToString(),
+        p.Rules,
+        p.Description,
+        p.IsSystem);
 }
 
 // ==================== MCP DTOs ====================
@@ -276,3 +309,4 @@ public record McpUserInfo(Guid Id, string ExternalId, string Provider, string? E
 public record McpUserDetail(Guid Id, string ExternalId, string Provider, string? Email, string? DisplayName, bool IsActive, List<McpUserRoleInfo> Roles, List<McpTeamMembershipInfo> Teams);
 public record McpUserRoleInfo(string RoleCode, string? ApplicationCode, string? ResourceInstanceId);
 public record McpTeamMembershipInfo(string TeamCode, string TeamName, string MembershipRole);
+public record McpPolicyInfo(Guid Id, string Code, string Name, string Criticality, Dictionary<string, object>? Rules, string? Description, bool IsSystem);
