@@ -58,6 +58,7 @@ builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
+builder.Services.AddScoped<IPolicyService, PolicyService>();
 
 // Epic AL — NATS messaging substrate.
 //

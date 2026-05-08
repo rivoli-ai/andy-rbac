@@ -62,6 +62,39 @@ public class DataSeederTests
     }
 
     [Fact]
+    public async Task SeedAsync_SeedsStockPolicies()
+    {
+        using var context = CreateContext();
+
+        await DataSeeder.SeedAsync(context);
+
+        var policies = await context.Policies.ToListAsync();
+        policies.Should().Contain(p => p.Code == "read-only" && p.IsSystem);
+        policies.Should().Contain(p => p.Code == "write-branch" && p.IsSystem);
+        policies.Should().Contain(p => p.Code == "sandboxed" && p.IsSystem);
+        policies.Should().Contain(p => p.Code == "no-prod" && p.IsSystem);
+        policies.Should().Contain(p => p.Code == "high-risk" && p.IsSystem);
+        policies.Should().Contain(p => p.Code == "draft-only" && p.IsSystem);
+
+        var highRisk = policies.First(p => p.Code == "high-risk");
+        highRisk.Criticality.Should().Be(Andy.Rbac.Models.PolicyCriticality.Critical);
+        highRisk.Rules.Should().NotBeNull();
+        highRisk.Rules!["requirePreGate"].Should().Be(true);
+        highRisk.Rules["requirePostGate"].Should().Be(true);
+    }
+
+    [Fact]
+    public async Task SeedAsync_StockPolicies_AreIdempotent()
+    {
+        using var context = CreateContext();
+
+        await DataSeeder.SeedAsync(context);
+        await DataSeeder.SeedAsync(context);
+
+        (await context.Policies.CountAsync(p => p.IsSystem)).Should().Be(6);
+    }
+
+    [Fact]
     public async Task SeedAsync_SeedsGlobalRoles()
     {
         // Arrange

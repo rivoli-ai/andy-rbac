@@ -124,18 +124,26 @@ public class RbacEventPublisherTests
     }
 
     [Fact]
-    public void PolicyCreated_throws_until_Epic_V_lands()
+    public async Task PolicyCreated_stages_outbox_with_policy_subject()
     {
-        // Sanity check on the AL4 stub: calling the Policy.* helpers must
-        // fail loudly rather than silently no-op so accidental wiring
-        // shows up immediately in tests.
-        var publisher = new RbacEventPublisher(null!); // ctor doesn't dereference
-        var act = () => publisher.PolicyCreated(new PolicyCreated(
-            PolicyId: Guid.NewGuid(),
-            Code: "test",
+        var options = new DbContextOptionsBuilder<Andy.Rbac.Infrastructure.Data.RbacDbContext>()
+            .UseInMemoryDatabase($"db-{Guid.NewGuid()}")
+            .Options;
+        await using var context = new Andy.Rbac.Infrastructure.Data.RbacDbContext(options);
+        var publisher = new RbacEventPublisher(context);
+
+        var policyId = Guid.NewGuid();
+        publisher.PolicyCreated(new PolicyCreated(
+            PolicyId: policyId,
+            Code: "high-risk",
             ApplicationCode: null,
             OccurredAt: DateTimeOffset.UtcNow));
-        act.Should().Throw<NotImplementedException>();
+        await context.SaveChangesAsync();
+
+        var entry = await context.Outbox.SingleAsync();
+        entry.Subject.Should().Be($"andy.rbac.events.policy.{policyId}.created");
+        entry.PayloadJson.Should().Contain("\"policy_id\"");
+        entry.PayloadJson.Should().Contain("\"high-risk\"");
     }
 
     [Fact]

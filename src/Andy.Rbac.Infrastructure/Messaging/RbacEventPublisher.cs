@@ -39,13 +39,13 @@ public sealed class RbacEventPublisher : IRbacEventPublisher
         => Stage($"{SubjectPrefix}.subject_role.{payload.AssignmentId}.revoked", payload, headers);
 
     public void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null)
-        => throw new NotImplementedException("Policy entity (Epic V) has not shipped to main yet.");
+        => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.created", payload, headers);
 
     public void PolicyUpdated(PolicyUpdated payload, MessageHeaders? headers = null)
-        => throw new NotImplementedException("Policy entity (Epic V) has not shipped to main yet.");
+        => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.updated", payload, headers);
 
     public void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null)
-        => throw new NotImplementedException("Policy entity (Epic V) has not shipped to main yet.");
+        => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.deleted", payload, headers);
 
     private void Stage(string subject, object payload, MessageHeaders? headers)
     {

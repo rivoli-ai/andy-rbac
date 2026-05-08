@@ -26,7 +26,129 @@ public static class DataSeeder
         await SeedActionsAsync(db, ct);
         await SeedApplicationsAsync(db, ct);
         await SeedGlobalRolesAsync(db, ct);
+        await SeedStockPoliciesAsync(db, ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// V2: seed the six stock policies that the simulator binds to. These are
+    /// flagged <c>IsSystem</c> so they cannot be edited or deleted. The Code
+    /// column is the cross-service identifier referenced by andy-tasks
+    /// <c>Goal.PolicyId</c> / <c>DelegationContract.PolicyId</c>.
+    /// </summary>
+    private static async Task SeedStockPoliciesAsync(RbacDbContext db, CancellationToken ct)
+    {
+        // Inserts go via SaveChangesAsync at the end of SeedAsync, so we
+        // also need to flag any policy added in this pass as Modified=No
+        // for re-runs to be idempotent.
+        var stockPolicies = new[]
+        {
+            new Policy
+            {
+                Id = Guid.NewGuid(),
+                Code = "read-only",
+                Name = "Read-only",
+                Criticality = PolicyCriticality.Low,
+                Description = "Agent may read repository state but cannot mutate anything.",
+                Rules = new Dictionary<string, object>
+                {
+                    ["requirePreGate"] = false,
+                    ["requirePostGate"] = false,
+                    ["retentionDays"] = 30,
+                    ["archiveTier"] = "default",
+                },
+                IsSystem = true,
+            },
+            new Policy
+            {
+                Id = Guid.NewGuid(),
+                Code = "write-branch",
+                Name = "Write to feature branch",
+                Criticality = PolicyCriticality.Low,
+                Description = "Agent may write commits and push to non-default branches only.",
+                Rules = new Dictionary<string, object>
+                {
+                    ["requirePreGate"] = false,
+                    ["requirePostGate"] = false,
+                    ["retentionDays"] = 30,
+                    ["archiveTier"] = "default",
+                },
+                IsSystem = true,
+            },
+            new Policy
+            {
+                Id = Guid.NewGuid(),
+                Code = "sandboxed",
+                Name = "Sandboxed",
+                Criticality = PolicyCriticality.Medium,
+                Description = "Agent runs in an isolated sandbox; no external network or production access.",
+                Rules = new Dictionary<string, object>
+                {
+                    ["requirePreGate"] = false,
+                    ["requirePostGate"] = false,
+                    ["retentionDays"] = 30,
+                    ["archiveTier"] = "default",
+                },
+                IsSystem = true,
+            },
+            new Policy
+            {
+                Id = Guid.NewGuid(),
+                Code = "no-prod",
+                Name = "No production access",
+                Criticality = PolicyCriticality.High,
+                Description = "Pre-execution gate on any deploy-class task; blocks production-touching tools.",
+                Rules = new Dictionary<string, object>
+                {
+                    ["requirePreGate"] = true,
+                    ["requirePostGate"] = false,
+                    ["blocksDeployTools"] = true,
+                    ["retentionDays"] = 365,
+                    ["archiveTier"] = "medium",
+                },
+                IsSystem = true,
+            },
+            new Policy
+            {
+                Id = Guid.NewGuid(),
+                Code = "high-risk",
+                Name = "High risk",
+                Criticality = PolicyCriticality.Critical,
+                Description = "Pre + post execution gates on every task; full action-log retention.",
+                Rules = new Dictionary<string, object>
+                {
+                    ["requirePreGate"] = true,
+                    ["requirePostGate"] = true,
+                    ["retentionDays"] = 2555, // ~7 years
+                    ["archiveTier"] = "high",
+                },
+                IsSystem = true,
+            },
+            new Policy
+            {
+                Id = Guid.NewGuid(),
+                Code = "draft-only",
+                Name = "Draft only",
+                Criticality = PolicyCriticality.Medium,
+                Description = "Post-execution gate on publishable artifacts; outputs marked draft until reviewed.",
+                Rules = new Dictionary<string, object>
+                {
+                    ["requirePreGate"] = false,
+                    ["requirePostGate"] = true,
+                    ["retentionDays"] = 30,
+                    ["archiveTier"] = "default",
+                },
+                IsSystem = true,
+            },
+        };
+
+        foreach (var policy in stockPolicies)
+        {
+            if (!await db.Policies.AnyAsync(p => p.Code == policy.Code, ct))
+            {
+                db.Policies.Add(policy);
+            }
+        }
     }
 
     /// <summary>

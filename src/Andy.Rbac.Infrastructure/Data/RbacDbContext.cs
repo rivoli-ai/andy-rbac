@@ -30,9 +30,10 @@ public class RbacDbContext : DbContext
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<TeamRole> TeamRoles => Set<TeamRole>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<Policy> Policies => Set<Policy>();
 
     // AL2: transactional outbox. Domain writes that need to emit cross-
-    // service events (RoleService, future PolicyService) append rows here
+    // service events (RoleService, PolicyService) append rows here
     // inside the same transaction; OutboxDispatcher drains them to NATS.
     public DbSet<OutboxEntry> Outbox => Set<OutboxEntry>();
 
@@ -356,6 +357,24 @@ public class RbacDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.ApplicationId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Policy (V1). Stock policies are seeded as IsSystem in the
+        // DataSeeder; the Code column is the cross-service identifier
+        // referenced by andy-tasks Goal.PolicyId / DelegationContract.PolicyId.
+        modelBuilder.Entity<Policy>(entity =>
+        {
+            entity.ToTable("policies");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Description).HasMaxLength(2000);
+            entity.Property(e => e.Criticality).HasConversion<string>().HasMaxLength(20);
+            var policyRules = entity.Property(e => e.Rules)
+                .HasConversion(dictionaryConverter);
+            if (jsonColumnType != null) policyRules.HasColumnType(jsonColumnType);
+            policyRules.Metadata.SetValueComparer(dictionaryComparer);
+            entity.HasIndex(e => e.Code).IsUnique();
         });
 
         // OutboxEntry (AL2). Stored as plain text columns for provider
