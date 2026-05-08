@@ -19,12 +19,14 @@ Role-Based Access Control (RBAC) system for Andy applications.
 
 - **Role-Based Access Control** - Hierarchical roles with permission inheritance
 - **Fine-Grained Permissions** - Resource-level and instance-level permissions
+- **Policies** - Execution-time risk profiles (`read-only`, `high-risk`, `sandboxed`, `no-prod`, `draft-only`, `write-branch`) governing agent actions, gates, and retention
 - **Multi-Application Support** - Single RBAC server for multiple applications
 - **Team Management** - Organize users into teams with shared permissions
 - **gRPC and REST APIs** - High-performance permission checking
 - **ASP.NET Core Integration** - Authorization handlers and policy providers
 - **Caching** - In-memory caching for fast permission lookups
 - **MCP Support** - Model Context Protocol tools for AI assistants
+- **CLI** - `andy-rbac` for managing applications, roles, teams, users, and policies
 
 ## Quick Start
 
@@ -120,6 +122,56 @@ Examples:
 - `/api/roles` - Role management
 - `/api/subjects` - User/subject management
 - `/api/teams` - Team management
+- `/api/policies` - Policy catalog (Epic V — see [docs/policies.md](docs/policies.md))
+
+## Policies
+
+A **policy** is a named risk profile that downstream services (andy-tasks, andy-docs, Conductor) consume to decide auto-gating, retention, and action enforcement. Six stock policies ship pre-seeded (`read-only`, `write-branch`, `sandboxed`, `no-prod`, `high-risk`, `draft-only`); tenants may register additional policies via `POST /api/policies`.
+
+See **[docs/policies.md](docs/policies.md)** for the full catalog, rule key reference, event taxonomy, and FAQ. The design rationale is captured in **[ADR 0001 — Policies as first-class catalog rows](docs/adr/0001-policies.md)**.
+
+## CLI
+
+The `andy-rbac` CLI (`src/Andy.Rbac.Cli`) wraps the REST API for terminal-based admin and agent automation:
+
+```bash
+# Applications, roles, teams, users
+andy-rbac app list
+andy-rbac role list --application andy-tasks
+andy-rbac team list
+andy-rbac user search jane
+
+# Policies (Epic V)
+andy-rbac policy list                       # six stock policies + tenant overrides
+andy-rbac policy list --criticality High    # filter by criticality
+andy-rbac policy get high-risk              # full rule body for a policy
+
+# Permission checks
+andy-rbac check permission user-123 andy-tasks:goal:read
+
+# Output formats: --output table (default) | json | csv
+```
+
+Global flags: `--api-url` / `-u` (env `ANDY_RBAC_URL`), `--api-key` / `-k` (env `ANDY_RBAC_API_KEY`), `--output` / `-o`.
+
+## MCP Tools
+
+The `andy-rbac` API exposes MCP tools for AI assistants. Read-only tools cover permission checks and the Policy catalog; write tools cover application/role/team/user management.
+
+```
+# Permission checks
+CheckPermission, GetUserPermissions, GetUserRoles
+
+# Catalog reads
+ListApplications, GetApplication, ListRoles, ListTeams, SearchUsers, GetUser
+ListPolicies, GetPolicy
+
+# Mutations (admin-only paths)
+CreateApplication, CreateRole, AssignRoleToUser, RevokeRoleFromUser,
+CreateTeam, AddUserToTeam, AssignRoleToTeam, CreateUser
+```
+
+Policy mutations (`POST` / `PUT` / `DELETE`) are intentionally not surfaced via MCP — they stay on the REST surface so admin authorization paths don't move through tool calls.
 
 ## Testing
 
