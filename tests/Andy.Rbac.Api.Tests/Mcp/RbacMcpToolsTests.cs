@@ -15,6 +15,7 @@ public class RbacMcpToolsTests
     private readonly Mock<IRoleService> _roleServiceMock = new();
     private readonly Mock<ITeamService> _teamServiceMock = new();
     private readonly Mock<ISubjectService> _subjectServiceMock = new();
+    private readonly Mock<IPolicyService> _policyServiceMock = new();
     private readonly Mock<ILogger<RbacMcpTools>> _loggerMock = new();
 
     private RbacMcpTools CreateTools()
@@ -25,6 +26,7 @@ public class RbacMcpToolsTests
             _roleServiceMock.Object,
             _teamServiceMock.Object,
             _subjectServiceMock.Object,
+            _policyServiceMock.Object,
             _loggerMock.Object);
     }
 
@@ -530,5 +532,63 @@ public class RbacMcpToolsTests
         result.ExternalId.Should().Be("new-user");
         result.Email.Should().Be("new@test.com");
         result.IsActive.Should().BeTrue();
+    }
+
+    // ==================== Policy Catalog Tests ====================
+
+    [Fact]
+    public async Task ListPolicies_ReturnsCatalog()
+    {
+        var tools = CreateTools();
+        var policies = new List<PolicyDetail>
+        {
+            new(Guid.NewGuid(), "high-risk", "High risk", PolicyCriticality.Critical,
+                new Dictionary<string, object> { ["requirePreGate"] = true }, "desc", true,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+            new(Guid.NewGuid(), "read-only", "Read-only", PolicyCriticality.Low,
+                null, "desc", true,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+        };
+        _policyServiceMock.Setup(x => x.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PolicyListResult(policies));
+
+        var result = await tools.ListPolicies();
+
+        result.Should().HaveCount(2);
+        result.Should().Contain(p => p.Code == "high-risk" && p.Criticality == "Critical" && p.IsSystem);
+        result.Should().Contain(p => p.Code == "read-only" && p.Criticality == "Low");
+    }
+
+    [Fact]
+    public async Task GetPolicy_WithKnownCode_ReturnsPolicy()
+    {
+        var tools = CreateTools();
+        var policy = new PolicyDetail(
+            Guid.NewGuid(), "high-risk", "High risk", PolicyCriticality.Critical,
+            new Dictionary<string, object> { ["requirePreGate"] = true, ["requirePostGate"] = true },
+            "Critical risk profile", true,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        _policyServiceMock.Setup(x => x.GetByCodeAsync("high-risk", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PolicyDetailResult(policy));
+
+        var result = await tools.GetPolicy("high-risk");
+
+        result.Should().NotBeNull();
+        result!.Code.Should().Be("high-risk");
+        result.Criticality.Should().Be("Critical");
+        result.Rules.Should().NotBeNull();
+        result.Rules!["requirePreGate"].Should().Be(true);
+    }
+
+    [Fact]
+    public async Task GetPolicy_WithUnknownCode_ReturnsNull()
+    {
+        var tools = CreateTools();
+        _policyServiceMock.Setup(x => x.GetByCodeAsync("missing", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PolicyDetailResult?)null);
+
+        var result = await tools.GetPolicy("missing");
+
+        result.Should().BeNull();
     }
 }
