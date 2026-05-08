@@ -14,7 +14,7 @@ namespace Andy.Rbac.Messaging;
 // Subject scheme (ADR 0001 + AL3):
 //   andy.rbac.events.role.{role_id}.{created|updated|deleted}
 //   andy.rbac.events.subject_role.{assignment_id}.{granted|revoked}
-//   andy.rbac.events.policy.{policy_id}.{created|updated|deleted}    (stub — Epic V pending)
+//   andy.rbac.events.policy.{policy_id}.{created|updated|deleted}
 public interface IRbacEventPublisher
 {
     void RoleCreated(RoleCreated payload, MessageHeaders? headers = null);
@@ -23,10 +23,6 @@ public interface IRbacEventPublisher
     void RoleAssigned(RoleAssigned payload, MessageHeaders? headers = null);
     void RoleRevoked(RoleRevoked payload, MessageHeaders? headers = null);
 
-    // Stubs — Epic V (Policy entity) hasn't shipped to main yet. Calling
-    // these throws NotImplementedException so accidental wiring fails
-    // loudly rather than silently no-op'ing. Once Epic V lands, drop the
-    // throws and stage outbox rows just like the Role helpers above.
     void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null);
     void PolicyUpdated(PolicyUpdated payload, MessageHeaders? headers = null);
     void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null);
