@@ -33,6 +33,7 @@ rootCommand.AddCommand(RoleCommands.Create(apiUrlOption, apiKeyOption, outputOpt
 rootCommand.AddCommand(TeamCommands.Create(apiUrlOption, apiKeyOption, outputOption));
 rootCommand.AddCommand(UserCommands.Create(apiUrlOption, apiKeyOption, outputOption));
 rootCommand.AddCommand(CheckCommands.Create(apiUrlOption, apiKeyOption, outputOption));
+rootCommand.AddCommand(PolicyCommands.Create(apiUrlOption, apiKeyOption, outputOption));
 
 // Version command
 var versionCommand = new Command("version", "Show version information");
