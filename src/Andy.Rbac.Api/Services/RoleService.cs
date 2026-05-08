@@ -1,4 +1,6 @@
 using Andy.Rbac.Infrastructure.Data;
+using Andy.Rbac.Messaging;
+using Andy.Rbac.Messaging.Events;
 using Andy.Rbac.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,11 +13,13 @@ public class RoleService : IRoleService
 {
     private readonly RbacDbContext _db;
     private readonly ILogger<RoleService> _logger;
+    private readonly IRbacEventPublisher _events;
 
-    public RoleService(RbacDbContext db, ILogger<RoleService> logger)
+    public RoleService(RbacDbContext db, ILogger<RoleService> logger, IRbacEventPublisher events)
     {
         _db = db;
         _logger = logger;
+        _events = events;
     }
 
     public async Task<RoleListResult> GetAllAsync(string? applicationCode = null, CancellationToken ct = default)
@@ -127,6 +131,14 @@ public class RoleService : IRoleService
         };
 
         _db.Roles.Add(role);
+        _events.RoleCreated(new RoleCreated(
+            RoleId: role.Id,
+            Code: role.Code,
+            Name: role.Name,
+            ApplicationCode: request.ApplicationCode,
+            ParentRoleCode: request.ParentRoleCode,
+            IsSystem: role.IsSystem,
+            OccurredAt: DateTimeOffset.UtcNow));
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Created role {RoleCode}", role.Code);
@@ -182,7 +194,17 @@ public class RoleService : IRoleService
         if (role.IsSystem)
             throw new InvalidOperationException("Cannot delete system roles");
 
+        var appCode = await _db.Applications
+            .Where(a => a.Id == role.ApplicationId)
+            .Select(a => a.Code)
+            .FirstOrDefaultAsync(ct);
+
         _db.Roles.Remove(role);
+        _events.RoleDeleted(new RoleDeleted(
+            RoleId: role.Id,
+            Code: role.Code,
+            ApplicationCode: appCode,
+            OccurredAt: DateTimeOffset.UtcNow));
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Deleted role {RoleCode}", role.Code);
@@ -206,12 +228,22 @@ public class RoleService : IRoleService
         if (existing)
             return $"Role '{roleCode}' is already assigned to user";
 
-        _db.SubjectRoles.Add(new SubjectRole
+        var assignment = new SubjectRole
         {
+            Id = Guid.NewGuid(),
             SubjectId = subject.Id,
             RoleId = role.Id,
             ResourceInstanceId = resourceInstanceId
-        });
+        };
+        _db.SubjectRoles.Add(assignment);
+        _events.RoleAssigned(new RoleAssigned(
+            AssignmentId: assignment.Id,
+            SubjectId: subject.Id,
+            SubjectExternalId: subject.ExternalId,
+            RoleId: role.Id,
+            RoleCode: role.Code,
+            ResourceInstanceId: resourceInstanceId,
+            OccurredAt: DateTimeOffset.UtcNow));
 
         await _db.SaveChangesAsync(ct);
 
@@ -237,6 +269,14 @@ public class RoleService : IRoleService
             return $"Role '{roleCode}' is not assigned to user";
 
         _db.SubjectRoles.Remove(assignment);
+        _events.RoleRevoked(new RoleRevoked(
+            AssignmentId: assignment.Id,
+            SubjectId: subject.Id,
+            SubjectExternalId: subject.ExternalId,
+            RoleId: role.Id,
+            RoleCode: role.Code,
+            ResourceInstanceId: resourceInstanceId,
+            OccurredAt: DateTimeOffset.UtcNow));
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Revoked role {RoleCode} from {SubjectId}", roleCode, subjectExternalId);

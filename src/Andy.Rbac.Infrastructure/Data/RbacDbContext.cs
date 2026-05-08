@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Andy.Rbac.Messaging;
 using Andy.Rbac.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -29,6 +30,11 @@ public class RbacDbContext : DbContext
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<TeamRole> TeamRoles => Set<TeamRole>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
+    // AL2: transactional outbox. Domain writes that need to emit cross-
+    // service events (RoleService, future PolicyService) append rows here
+    // inside the same transaction; OutboxDispatcher drains them to NATS.
+    public DbSet<OutboxEntry> Outbox => Set<OutboxEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -350,6 +356,34 @@ public class RbacDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.ApplicationId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // OutboxEntry (AL2). Stored as plain text columns for provider
+        // portability — Postgres jsonb buys nothing here since the
+        // dispatcher round-trips strings to NATS.
+        modelBuilder.Entity<OutboxEntry>(entity =>
+        {
+            entity.ToTable("outbox");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Subject).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.PayloadType).HasMaxLength(256);
+            entity.Property(e => e.PayloadJson).IsRequired();
+            entity.Property(e => e.LastError).HasMaxLength(2000);
+            entity.HasIndex(e => e.CorrelationId);
+
+            // Partial index on pending rows so the dispatcher's hot query
+            // (WHERE PublishedAt IS NULL ORDER BY CreatedAt) scans only
+            // the pending working set rather than the full audit history.
+            // Postgres-only — SQLite / InMemory get a non-filtered index.
+            if (Database.IsNpgsql())
+            {
+                entity.HasIndex(e => e.CreatedAt)
+                    .HasFilter("\"PublishedAt\" IS NULL");
+            }
+            else
+            {
+                entity.HasIndex(e => e.CreatedAt);
+            }
         });
     }
 }
