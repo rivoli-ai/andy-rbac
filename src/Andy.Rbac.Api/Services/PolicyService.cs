@@ -55,6 +55,7 @@ public class PolicyService : IPolicyService
         if (await _db.Policies.AnyAsync(p => p.Code == request.Code, ct))
             throw new InvalidOperationException($"Policy with code '{request.Code}' already exists");
 
+        var now = DateTimeOffset.UtcNow;
         var policy = new Policy
         {
             Id = Guid.NewGuid(),
@@ -64,8 +65,8 @@ public class PolicyService : IPolicyService
             Rules = request.Rules,
             Description = request.Description,
             IsSystem = false,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
         };
 
         _db.Policies.Add(policy);
@@ -73,7 +74,25 @@ public class PolicyService : IPolicyService
             PolicyId: policy.Id,
             Code: policy.Code,
             ApplicationCode: null,
-            OccurredAt: DateTimeOffset.UtcNow));
+            OccurredAt: now));
+
+        // AL4 retention_changed at creation time: previous = null (no prior
+        // value), current = whatever the create request specified. Consumers
+        // (rivoli-ai/andy-tasks#74) treat null → value the same as
+        // value → value with the same idempotency semantics.
+        var newDays = ExtractRetentionDays(policy.Rules);
+        if (newDays.HasValue)
+        {
+            _events.RetentionChanged(new RetentionChanged(
+                PolicyId: policy.Id,
+                Code: policy.Code,
+                PreviousRetentionDays: null,
+                NewRetentionDays: newDays,
+                ChangeId: Guid.NewGuid().ToString("N"),
+                ChangedBy: null,
+                OccurredAt: now));
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Created policy {PolicyCode}", policy.Code);
@@ -89,17 +108,40 @@ public class PolicyService : IPolicyService
         if (policy.IsSystem)
             throw new InvalidOperationException("Cannot modify system policies");
 
+        // AL4: snapshot the previous retentionDays before mutating Rules so
+        // the RetentionChanged event can carry the old value.
+        var previousDays = ExtractRetentionDays(policy.Rules);
+
         if (request.Name != null) policy.Name = request.Name;
         if (request.Criticality.HasValue) policy.Criticality = request.Criticality.Value;
         if (request.Rules != null) policy.Rules = request.Rules;
         if (request.Description != null) policy.Description = request.Description;
-        policy.UpdatedAt = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.UtcNow;
+        policy.UpdatedAt = now;
 
         _events.PolicyUpdated(new PolicyUpdated(
             PolicyId: policy.Id,
             Code: policy.Code,
             ApplicationCode: null,
-            OccurredAt: DateTimeOffset.UtcNow));
+            OccurredAt: now));
+
+        // AL4: when the retentionDays rule changed (in either direction or
+        // null ↔ value), fire the specific retention_changed event so
+        // downstream consumers (rivoli-ai/andy-tasks#74) can cascade TTL
+        // updates without re-parsing the generic PolicyUpdated payload.
+        var newDays = ExtractRetentionDays(policy.Rules);
+        if (previousDays != newDays)
+        {
+            _events.RetentionChanged(new RetentionChanged(
+                PolicyId: policy.Id,
+                Code: policy.Code,
+                PreviousRetentionDays: previousDays,
+                NewRetentionDays: newDays,
+                ChangeId: Guid.NewGuid().ToString("N"),
+                ChangedBy: null,
+                OccurredAt: now));
+        }
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Updated policy {PolicyCode}", policy.Code);
@@ -126,6 +168,34 @@ public class PolicyService : IPolicyService
         _logger.LogInformation("Deleted policy {PolicyCode}", policy.Code);
 
         return true;
+    }
+
+    // AL4 helper: read the `retentionDays` integer off the policy's
+    // free-form Rules dictionary. Lives next to MapToDetail since both
+    // probe the same loosely-typed surface. Returns null when the rule
+    // is absent or unparseable so the caller can model "no retention
+    // configured" the same way as "consumer ignored the rule."
+    private static int? ExtractRetentionDays(Dictionary<string, object>? rules)
+    {
+        if (rules is null) return null;
+        // Stable key per Policy.cs:35 doc-comment.
+        if (!rules.TryGetValue("retentionDays", out var raw) || raw is null) return null;
+        // EF Core's Postgres jsonb conversion + the in-memory test path can
+        // return the same logical value under several CLR types — int,
+        // long, double, decimal, or System.Text.Json.JsonElement (when the
+        // dictionary was rehydrated from a JSON deserializer). Probe all
+        // so we don't silently drop the event.
+        return raw switch
+        {
+            int i => i,
+            long l when l >= int.MinValue && l <= int.MaxValue => (int)l,
+            double d when !double.IsNaN(d) && d >= int.MinValue && d <= int.MaxValue => (int)d,
+            decimal m when m >= int.MinValue && m <= int.MaxValue => (int)m,
+            System.Text.Json.JsonElement el => el.ValueKind == System.Text.Json.JsonValueKind.Number
+                && el.TryGetInt32(out var v) ? v : null,
+            string s when int.TryParse(s, out var v) => v,
+            _ => null,
+        };
     }
 
     private static PolicyDetail MapToDetail(Policy p) => new(

@@ -47,6 +47,9 @@ public sealed class RbacEventPublisher : IRbacEventPublisher
     public void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null)
         => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.deleted", payload, headers);
 
+    public void RetentionChanged(RetentionChanged payload, MessageHeaders? headers = null)
+        => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.retention_changed", payload, headers);
+
     private void Stage(string subject, object payload, MessageHeaders? headers)
     {
         headers ??= MessageHeaders.NewRoot();
