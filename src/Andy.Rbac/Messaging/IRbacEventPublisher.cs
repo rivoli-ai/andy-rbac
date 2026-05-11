@@ -14,7 +14,7 @@ namespace Andy.Rbac.Messaging;
 // Subject scheme (ADR 0001 + AL3):
 //   andy.rbac.events.role.{role_id}.{created|updated|deleted}
 //   andy.rbac.events.subject_role.{assignment_id}.{granted|revoked}
-//   andy.rbac.events.policy.{policy_id}.{created|updated|deleted}
+//   andy.rbac.events.policy.{policy_id}.{created|updated|deleted|retention_changed}
 public interface IRbacEventPublisher
 {
     void RoleCreated(RoleCreated payload, MessageHeaders? headers = null);
@@ -26,4 +26,8 @@ public interface IRbacEventPublisher
     void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null);
     void PolicyUpdated(PolicyUpdated payload, MessageHeaders? headers = null);
     void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null);
+    // AL4 — fires when the policy's `retentionDays` rule value changes
+    // (alongside the generic PolicyUpdated). Consumers (rivoli-ai/andy-tasks#74)
+    // dedupe on `ChangeId` for at-least-once delivery semantics.
+    void RetentionChanged(RetentionChanged payload, MessageHeaders? headers = null);
 }
