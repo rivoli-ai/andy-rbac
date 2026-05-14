@@ -1,3 +1,5 @@
+using Andy.Rbac.Api;
+// HostEnvironmentExtensions.IsEmbedded / IsLocalOrEmbedded
 using Andy.Rbac.Api.Data;
 using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Middleware;
@@ -117,7 +119,11 @@ builder.Services.AddAuthentication("Bearer")
     {
         options.Authority = builder.Configuration["Auth:Authority"];
         options.Audience = builder.Configuration["Auth:Audience"];
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        // HTTPS metadata off in every non-production mode. Conductor's
+        // embedded mode talks to andy-auth over HTTP via the unified
+        // proxy on port 9100 — without IsLocalOrEmbedded() the JWT
+        // bearer middleware would refuse the discovery document.
+        options.RequireHttpsMetadata = !builder.Environment.IsLocalOrEmbedded();
         if (builder.Environment.IsDevelopment())
         {
             options.BackchannelHttpHandler = new HttpClientHandler
@@ -181,8 +187,11 @@ builder.Services.AddAuthorization();
 // empty list in Production usually means a deploy-time config drift. Throwing
 // at startup is louder than logging.
 var configuredCorsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
+// Pass `IsLocalOrEmbedded` so Conductor's embedded mode (which doesn't
+// configure Cors:Origins) gets the lenient empty-list-allowed posture.
+// Production still throws on empty config so a deploy-time drift is loud.
 Andy.Rbac.Api.Configuration.CorsOriginValidator.Validate(
-    configuredCorsOrigins, builder.Environment.IsDevelopment());
+    configuredCorsOrigins, builder.Environment.IsLocalOrEmbedded());
 var effectiveCorsOrigins = configuredCorsOrigins.Length > 0
     ? configuredCorsOrigins
     : new[] { "http://localhost:3000" };
@@ -216,7 +225,13 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Conductor's embedded mode terminates HTTPS at the unified proxy on
+// port 9100; the in-process Kestrel only ever binds to HTTP. Forcing
+// a redirect would trap every request in a redirect loop.
+if (!app.Environment.IsEmbedded())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -297,13 +312,20 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<RbacDbContext>();
 
-    if (app.Environment.IsDevelopment())
+    // Schema bootstrap differs by provider:
+    //   - PostgreSQL: apply EF migrations (committed under Data/Migrations/).
+    //   - SQLite: use `EnsureCreated` so a fresh embedded install gets a
+    //     schema generated from the current EF model. SQLite migrations
+    //     are tracked separately under G2.1.
+    //
+    // Gated on `IsLocalOrEmbedded()` so Conductor's embedded mode also
+    // schema-migrates on first boot — without this a fresh install
+    // would launch with an empty SQLite DB and every RBAC check 500s.
+    // The `IsRelational()` guard keeps integration tests (InMemory
+    // provider) from tripping on `MigrateAsync` which requires a
+    // relational provider.
+    if (app.Environment.IsLocalOrEmbedded() && db.Database.IsRelational())
     {
-        // Schema bootstrap differs by provider:
-        //   - PostgreSQL: apply EF migrations (committed under Data/Migrations/).
-        //   - SQLite: use `EnsureCreated` so a fresh embedded install gets a
-        //     schema generated from the current EF model. SQLite migrations
-        //     are tracked separately under G2.1.
         if (dbProvider == DatabaseProvider.Sqlite)
         {
             await db.Database.EnsureCreatedAsync();
