@@ -37,6 +37,36 @@ public class RbacDbContext : DbContext
     // inside the same transaction; OutboxDispatcher drains them to NATS.
     public DbSet<OutboxEntry> Outbox => Set<OutboxEntry>();
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+
+        // SQLite stores `DateTimeOffset` as TEXT, which orders
+        // lexicographically and breaks every WHERE/ORDER BY that compares
+        // a column to a `DateTimeOffset` value or asks "is this null or
+        // < now". The first round of this hit OutboxDispatcher's hot
+        // query (PR #72); the second round surfaced via
+        // `PermissionRepository.HasPermissionAsync` filtering
+        // `SubjectRole.ExpiresAt > now` — every `/api/check` call
+        // returned 500 under SQLite, which downstream service handlers
+        // then mapped to `Deny` so every authenticated controller
+        // returned 403.
+        //
+        // Bind a binary converter (`DateTimeOffset` <-> `long`) at the
+        // convention level so every DateTimeOffset column on every
+        // entity in this DbContext gets the same treatment. Avoids the
+        // whack-a-mole "I missed one" pattern. Postgres handles
+        // DateTimeOffset natively via `timestamp with time zone`, so the
+        // conversion is gated to SQLite only.
+        if (Database.IsSqlite())
+        {
+            configurationBuilder.Properties<DateTimeOffset>()
+                .HaveConversion<DateTimeOffsetToBinaryConverter>();
+            configurationBuilder.Properties<DateTimeOffset?>()
+                .HaveConversion<DateTimeOffsetToBinaryConverter>();
+        }
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -390,31 +420,15 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.LastError).HasMaxLength(2000);
             entity.HasIndex(e => e.CorrelationId);
 
-            // SQLite cannot ORDER BY DateTimeOffset (it stores them as
-            // TEXT, which orders lexicographically, not chronologically).
-            // The dispatcher's hot path runs `OrderBy(e => e.CreatedAt)`
-            // so without this converter every tick throws
-            // NotSupportedException("SQLite does not support expressions
-            // of type 'DateTimeOffset' in ORDER BY clauses") and the
-            // OutboxDispatcher's ExecuteAsync catch-loop generates ~250 MB
-            // of stack-trace spam per minute. Store as UTC ticks (long)
-            // for SQLite only — Postgres handles DateTimeOffset natively
-            // via the `timestamp with time zone` migration column type.
-            // Round-trip is lossless because the entity always assigns
-            // DateTimeOffset.UtcNow on insert (see OutboxEntry.cs:37).
-            if (Database.IsSqlite())
-            {
-                entity.Property(e => e.CreatedAt)
-                    .HasConversion(v => v.UtcTicks, v => new DateTimeOffset(v, TimeSpan.Zero));
-                entity.Property(e => e.PublishedAt)
-                    .HasConversion(
-                        v => v.HasValue ? v.Value.UtcTicks : (long?)null,
-                        v => v.HasValue ? new DateTimeOffset(v.Value, TimeSpan.Zero) : (DateTimeOffset?)null);
-                entity.Property(e => e.LastAttemptAt)
-                    .HasConversion(
-                        v => v.HasValue ? v.Value.UtcTicks : (long?)null,
-                        v => v.HasValue ? new DateTimeOffset(v.Value, TimeSpan.Zero) : (DateTimeOffset?)null);
-            }
+            // SQLite cannot ORDER BY DateTimeOffset — the dispatcher's
+            // `OrderBy(e => e.CreatedAt)` hot path used to throw
+            // NotSupportedException every tick. The fix now lives at
+            // `ConfigureConventions` (above), which applies
+            // DateTimeOffsetToBinaryConverter to every DateTimeOffset
+            // property on every entity in this context. No per-entity
+            // configuration needed here. See andy-rbac#72 for the
+            // original OutboxEntry-only fix and #73 for the move to a
+            // global convention.
 
             // Partial index on pending rows so the dispatcher's hot query
             // (WHERE PublishedAt IS NULL ORDER BY CreatedAt) scans only
