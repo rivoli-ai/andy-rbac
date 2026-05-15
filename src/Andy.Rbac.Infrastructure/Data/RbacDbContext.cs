@@ -390,6 +390,32 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.LastError).HasMaxLength(2000);
             entity.HasIndex(e => e.CorrelationId);
 
+            // SQLite cannot ORDER BY DateTimeOffset (it stores them as
+            // TEXT, which orders lexicographically, not chronologically).
+            // The dispatcher's hot path runs `OrderBy(e => e.CreatedAt)`
+            // so without this converter every tick throws
+            // NotSupportedException("SQLite does not support expressions
+            // of type 'DateTimeOffset' in ORDER BY clauses") and the
+            // OutboxDispatcher's ExecuteAsync catch-loop generates ~250 MB
+            // of stack-trace spam per minute. Store as UTC ticks (long)
+            // for SQLite only — Postgres handles DateTimeOffset natively
+            // via the `timestamp with time zone` migration column type.
+            // Round-trip is lossless because the entity always assigns
+            // DateTimeOffset.UtcNow on insert (see OutboxEntry.cs:37).
+            if (Database.IsSqlite())
+            {
+                entity.Property(e => e.CreatedAt)
+                    .HasConversion(v => v.UtcTicks, v => new DateTimeOffset(v, TimeSpan.Zero));
+                entity.Property(e => e.PublishedAt)
+                    .HasConversion(
+                        v => v.HasValue ? v.Value.UtcTicks : (long?)null,
+                        v => v.HasValue ? new DateTimeOffset(v.Value, TimeSpan.Zero) : (DateTimeOffset?)null);
+                entity.Property(e => e.LastAttemptAt)
+                    .HasConversion(
+                        v => v.HasValue ? v.Value.UtcTicks : (long?)null,
+                        v => v.HasValue ? new DateTimeOffset(v.Value, TimeSpan.Zero) : (DateTimeOffset?)null);
+            }
+
             // Partial index on pending rows so the dispatcher's hot query
             // (WHERE PublishedAt IS NULL ORDER BY CreatedAt) scans only
             // the pending working set rather than the full audit history.
