@@ -223,7 +223,94 @@ public static class DataSeeder
         // the latter need the Role rows queryable by code.
         await db.SaveChangesAsync(ct);
 
+        // Each manifest declares roles (admin / user / viewer) but does not
+        // declare which permissions those roles carry. Without an explicit
+        // binding the role rows exist but have zero `role_permissions`
+        // rows — every check that needs e.g. `andy-agents:agent:read`
+        // returns 403, including the test user even though they hold the
+        // admin role on the application.
+        //
+        // Convention: the application's `admin` role (manifest role with
+        // code `admin`) gets every permission for every resource type the
+        // manifest declares. Mirrors `SeedSuperAdminPermissionsAsync` but
+        // scoped to one application instead of cross-app. This is the
+        // minimum fix that lets the manifest-declared admin role act as
+        // the "full access" the manifest's role description claims.
+        //
+        // `user` / `viewer` roles are intentionally left unbound here —
+        // they need an explicit permission-list per role and that is a
+        // manifest-schema extension separate from this fix.
+        await SeedManifestAdminRolePermissionsAsync(db, manifests, logger, ct);
+
         await SeedTestUserRoleBindingsAsync(db, manifests, configuration, logger, ct);
+    }
+
+    /// <summary>
+    /// For every manifest-declared application, bind the application's
+    /// `admin` role to every permission for every resource type the
+    /// manifest declares. Idempotent — skips bindings that already exist.
+    /// </summary>
+    private static async Task SeedManifestAdminRolePermissionsAsync(
+        RbacDbContext db,
+        IReadOnlyList<RegistrationManifest> manifests,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        var actions = await db.Actions.ToListAsync(ct);
+        if (actions.Count == 0) return;
+
+        foreach (var manifest in manifests)
+        {
+            if (manifest.Rbac is null) continue;
+
+            var app = await db.Applications.FirstOrDefaultAsync(a => a.Code == manifest.Rbac.ApplicationCode, ct);
+            if (app is null) continue;
+
+            var adminRole = await db.Roles.FirstOrDefaultAsync(r => r.ApplicationId == app.Id && r.Code == "admin", ct);
+            if (adminRole is null) continue;
+
+            var resourceTypes = await db.ResourceTypes.Where(rt => rt.ApplicationId == app.Id).ToListAsync(ct);
+            int bindingsAdded = 0;
+
+            foreach (var rt in resourceTypes)
+            {
+                foreach (var action in actions)
+                {
+                    var permission = await db.Permissions
+                        .FirstOrDefaultAsync(p => p.ResourceTypeId == rt.Id && p.ActionId == action.Id, ct);
+
+                    if (permission is null)
+                    {
+                        permission = new Permission
+                        {
+                            ResourceTypeId = rt.Id,
+                            ActionId = action.Id,
+                            Description = $"{action.Name} {rt.Name}"
+                        };
+                        db.Permissions.Add(permission);
+                        await db.SaveChangesAsync(ct);
+                    }
+
+                    if (!await db.RolePermissions.AnyAsync(rp => rp.RoleId == adminRole.Id && rp.PermissionId == permission.Id, ct))
+                    {
+                        db.RolePermissions.Add(new RolePermission
+                        {
+                            RoleId = adminRole.Id,
+                            PermissionId = permission.Id
+                        });
+                        bindingsAdded++;
+                    }
+                }
+            }
+
+            if (bindingsAdded > 0)
+            {
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation(
+                    "[manifest] Bound {Count} permissions to {App}'s admin role.",
+                    bindingsAdded, app.Code);
+            }
+        }
     }
 
     /// <summary>
