@@ -115,9 +115,20 @@ var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"]
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
     {
-        options.Authority = builder.Configuration["Auth:Authority"];
-        options.Audience = builder.Configuration["Auth:Audience"];
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        // Match the fallback chain used by `andyAuthAuthority` above
+        // (AndyAuth:Authority → Auth:Authority). Reading only
+        // `Auth:Authority` here left JwtBearer's Authority null when the
+        // env var was passed as `AndyAuth__Authority` (Conductor's
+        // embedded launcher), and the resulting JWT validation failed with
+        // `IDX10204: ValidIssuer is null or whitespace` on every request —
+        // andy-rbac silently 401'd every authenticated downstream call
+        // (and so every Conductor panel that depends on RBAC checks).
+        options.Authority = andyAuthAuthority;
+        options.Audience = builder.Configuration["AndyAuth:Audience"]
+            ?? builder.Configuration["Auth:Audience"];
+        options.RequireHttpsMetadata = builder.Configuration.GetValue<bool?>("AndyAuth:RequireHttpsMetadata")
+            ?? builder.Configuration.GetValue<bool?>("Auth:RequireHttpsMetadata")
+            ?? !builder.Environment.IsDevelopment();
         if (builder.Environment.IsDevelopment())
         {
             options.BackchannelHttpHandler = new HttpClientHandler
