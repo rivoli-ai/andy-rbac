@@ -372,6 +372,104 @@ public class DataSeederTests
     }
 
     [Fact]
+    public async Task SeedFromManifestsAsync_BindsAllPermissionsToManifestAdminRole()
+    {
+        // Regression for the empty-`role_permissions`-for-per-app-admin
+        // class of failure that surfaced on 2026-05-15: the manifest
+        // declares roles (admin / user / viewer) but no permission lists,
+        // and the seeder used to create the role rows without binding
+        // any permissions to them. Manifest-bound testUserRole then
+        // granted the test user the per-app admin role — which had zero
+        // permissions — so every `RequirePermission("X:Y:Z")` check on
+        // an authenticated controller returned 403. The companion
+        // failure was visible as `HTTP 403 GET /api/agents` after a
+        // fresh Conductor launch.
+        //
+        // Convention: after creating roles, the seeder binds every
+        // permission for every resource type the manifest declares to
+        // the application's `admin` role.
+        using var context = CreateContext();
+        // SeedAsync first so the global actions catalogue
+        // (read/write/delete/admin/...) exists.
+        await DataSeeder.SeedAsync(context);
+
+        var manifestPath = WriteTempManifest(SampleManifestWithTestUserRole);
+        try
+        {
+            var config = ConfigurationWithManifest(manifestPath);
+            await DataSeeder.SeedFromManifestsAsync(context, config, NullLogger.Instance);
+
+            var app = await context.Applications
+                .Include(a => a.Roles)
+                .Include(a => a.ResourceTypes)
+                .FirstOrDefaultAsync(a => a.Code == "andy-policies-test");
+            app.Should().NotBeNull("manifest must seed the application row");
+
+            var adminRole = app!.Roles.FirstOrDefault(r => r.Code == "admin");
+            adminRole.Should().NotBeNull("manifest declares an admin role");
+
+            var actions = await context.Actions.ToListAsync();
+            actions.Should().NotBeEmpty("SeedAsync seeds the global action catalogue");
+
+            // Every action × every manifest-declared resource type should
+            // be bound to the manifest's admin role. The manifest declares
+            // exactly one resource type (`policy`), so we expect one
+            // role_permission row per action.
+            var bindings = await context.RolePermissions
+                .Where(rp => rp.RoleId == adminRole!.Id)
+                .ToListAsync();
+            bindings.Count.Should().Be(
+                app.ResourceTypes.Count * actions.Count,
+                "admin role must be bound to every (resource type × action) permission for this application");
+
+            // Spot-check a specific permission to prove the binding shape
+            // is correct (and not just a side-effect count match).
+            var readAction = actions.First(a => a.Code == "read");
+            var policyType = app.ResourceTypes.First(rt => rt.Code == "policy");
+            var readPolicyPermission = await context.Permissions
+                .FirstOrDefaultAsync(p => p.ResourceTypeId == policyType.Id && p.ActionId == readAction.Id);
+            readPolicyPermission.Should().NotBeNull("permission rows are created during the binding pass");
+
+            var readPolicyBinding = bindings
+                .FirstOrDefault(rp => rp.PermissionId == readPolicyPermission!.Id);
+            readPolicyBinding.Should().NotBeNull(
+                "the admin role must hold the (policy, read) permission so RequirePermission(\"andy-policies-test:policy:read\") passes");
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_AdminRoleBinding_IsIdempotent()
+    {
+        // Same convention as above, but verifies the second call doesn't
+        // duplicate rows or grow the binding count. The seeder runs on
+        // every Conductor launch under the embedded-services path, so
+        // non-idempotent seed code accumulates indefinitely.
+        using var context = CreateContext();
+        await DataSeeder.SeedAsync(context);
+
+        var manifestPath = WriteTempManifest(SampleManifestWithTestUserRole);
+        try
+        {
+            var config = ConfigurationWithManifest(manifestPath);
+            await DataSeeder.SeedFromManifestsAsync(context, config, NullLogger.Instance);
+            var firstCount = await context.RolePermissions.CountAsync();
+
+            await DataSeeder.SeedFromManifestsAsync(context, config, NullLogger.Instance);
+            var secondCount = await context.RolePermissions.CountAsync();
+
+            secondCount.Should().Be(firstCount, "admin-role binding must be idempotent across re-seeds");
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
     public async Task SeedFromManifestsAsync_InProduction_SkipsTestUserRoleBinding()
     {
         using var context = CreateContext();
