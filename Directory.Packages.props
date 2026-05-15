@@ -3,6 +3,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Andy ecosystem -->
+    <PackageVersion Include="Andy.Auth.M2MClient" Version="2026.5.13-rc.189" />
+
     <!-- ASP.NET Core -->
     <PackageVersion Include="coverlet.collector" Version="6.0.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
