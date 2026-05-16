@@ -257,7 +257,7 @@ andy-rbac applications list
 andy-rbac roles assign --role admin --subject <id>
 andy-rbac users provision --provider andy-auth --external-id <id>
 andy-rbac teams create --code dev-team
-andy-rbac check --subject <id> --permission andy-docs:document:read
+andy-rbac check permission <user-id> andy-docs:document:read
 ```
 
 Thin wrapper over the REST API — useful for ops scripts and CI setup.
@@ -291,7 +291,7 @@ Optional client-side cache short-circuits repeat checks.
 
 | Port | Purpose |
 |------|---------|
-| 5001 / 7003 | RBAC API HTTPS (dev/docker) |
+| 5003 / 7003 | RBAC API HTTPS (dev/docker) |
 | 5180 | Blazor admin UI |
 | 5432 / 5433 | PostgreSQL |
 
