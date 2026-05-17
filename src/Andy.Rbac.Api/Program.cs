@@ -2,13 +2,16 @@ using Andy.Rbac.Api.Data;
 using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Middleware;
 using Andy.Rbac.Api.Services;
+using Andy.Rbac.Api.Telemetry;
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Infrastructure.Messaging;
 using Andy.Rbac.Infrastructure.Repositories;
 using Andy.Rbac.Messaging;
+using Andy.Telemetry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore.Authentication;
+using OpenTelemetry.Trace;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -187,6 +190,35 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOpt
 
 builder.Services.AddAuthorization();
 
+// --- OpenTelemetry (via Andy.Telemetry) ---
+// OT4 (rivoli-ai/conductor#1262): andy-rbac ships zero OTel DLLs today.
+// Wire OTLP export to Conductor's local receiver at :4318. The Conductor
+// embedded launcher sets OTEL_EXPORTER_OTLP_ENDPOINT/_PROTOCOL/_SERVICE_NAME
+// (see Conductor/Core/ServiceHost/Services/RbacServiceConfig.swift); the
+// AndyTelemetry config block is the fallback for non-Conductor launches.
+//
+// Conductor's UnifiedProxy already emits server-side request spans, so
+// EnableAspNetCoreInstrumentation stays off here to avoid double-counting.
+builder.Services.AddAndyTelemetry(builder.Configuration, o =>
+{
+    if (string.IsNullOrWhiteSpace(o.ServiceName))
+        o.ServiceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? "andy-rbac";
+    if (string.IsNullOrWhiteSpace(o.OtlpEndpoint))
+        o.OtlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+    if (string.IsNullOrWhiteSpace(o.Protocol) || o.Protocol == "grpc")
+    {
+        var envProtocol = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_PROTOCOL");
+        if (!string.IsNullOrWhiteSpace(envProtocol))
+            o.Protocol = envProtocol;
+    }
+    o.ActivitySources.Add(RbacTelemetry.ActivitySourceName);
+    o.Meters.Add(RbacTelemetry.MeterName);
+    o.EnableAspNetCoreInstrumentation = false;
+});
+// EF Core tracing is service-specific (not bundled in Andy.Telemetry).
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddEntityFrameworkCoreInstrumentation());
+
 // Add CORS — fail closed on misconfigured origin lists (issue #50). Wildcards
 // in an AllowCredentials policy are silently rejected by browsers anyway; an
 // empty list in Production usually means a deploy-time config drift. Throwing
@@ -302,6 +334,11 @@ app.MapPost("/token", (HttpContext ctx) =>
 // Health check
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }))
     .AllowAnonymous();
+
+// --- Prometheus metrics scraping (via Andy.Telemetry) ---
+// OT4 (rivoli-ai/conductor#1262). Exposes /metrics for the Conductor
+// scraper; OTLP push is independent.
+app.MapAndyTelemetry();
 
 // Apply migrations and seed data
 using (var scope = app.Services.CreateScope())

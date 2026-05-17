@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Andy.Rbac.Api.Telemetry;
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -27,56 +29,83 @@ public class PermissionEvaluator : IPermissionEvaluator
         string? resourceInstanceId = null,
         CancellationToken ct = default)
     {
-        // Find subject by external ID
-        var subject = await _db.Subjects
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        // OT4 (rivoli-ai/conductor#1262). Permission checks are the
+        // operation Conductor most wants to attribute when a panel
+        // mysteriously 403s — wrap the whole check in a span and emit
+        // the rbac.check.count counter on every exit so both the APM
+        // waterfall and the dashboards line up on the same data.
+        using var activity = RbacTelemetry.ActivitySource.StartActivity(
+            "PermissionCheck", ActivityKind.Internal);
+        activity?.SetTag("rbac.permission", permission);
+        activity?.SetTag("rbac.subject_external_id", subjectExternalId);
+        if (!string.IsNullOrEmpty(resourceInstanceId))
+            activity?.SetTag("rbac.resource_instance_id", resourceInstanceId);
 
-        if (subject == null)
+        var result = await EvaluateAsync();
+
+        var outcome = result.Allowed ? "granted" : "denied";
+        activity?.SetTag("rbac.outcome", outcome);
+        if (!result.Allowed && !string.IsNullOrEmpty(result.Reason))
+            activity?.SetTag("rbac.reason", result.Reason);
+        RbacTelemetry.ChecksTotal.Add(
+            1,
+            new KeyValuePair<string, object?>("rbac.outcome", outcome),
+            new KeyValuePair<string, object?>("rbac.permission", permission));
+        return result;
+
+        async Task<PermissionCheckResult> EvaluateAsync()
         {
-            _logger.LogDebug("Subject not found: {SubjectExternalId}", subjectExternalId);
-            return new PermissionCheckResult(false, "Subject not found");
-        }
+            // Find subject by external ID
+            var subject = await _db.Subjects
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
 
-        if (!subject.IsActive)
-        {
-            _logger.LogDebug("Subject is inactive: {SubjectExternalId}", subjectExternalId);
-            return new PermissionCheckResult(false, "Subject is inactive");
-        }
-
-        // Check subject's direct permissions
-        var hasPermission = await _permissionRepository.HasPermissionAsync(
-            subject.Id,
-            permission,
-            resourceInstanceId,
-            ct);
-
-        if (hasPermission)
-        {
-            return new PermissionCheckResult(true);
-        }
-
-        // Check group-based permissions via ExternalGroupMapping
-        if (groups != null)
-        {
-            var roleIds = await GetRoleIdsForGroupsAsync(groups, ct);
-            if (roleIds.Any())
+            if (subject == null)
             {
-                var hasGroupPermission = await _permissionRepository.HasPermissionForRolesAsync(
-                    roleIds,
-                    permission,
-                    resourceInstanceId,
-                    ct);
+                _logger.LogDebug("Subject not found: {SubjectExternalId}", subjectExternalId);
+                return new PermissionCheckResult(false, "Subject not found");
+            }
 
-                if (hasGroupPermission)
+            if (!subject.IsActive)
+            {
+                _logger.LogDebug("Subject is inactive: {SubjectExternalId}", subjectExternalId);
+                return new PermissionCheckResult(false, "Subject is inactive");
+            }
+
+            // Check subject's direct permissions
+            var hasPermission = await _permissionRepository.HasPermissionAsync(
+                subject.Id,
+                permission,
+                resourceInstanceId,
+                ct);
+
+            if (hasPermission)
+            {
+                return new PermissionCheckResult(true);
+            }
+
+            // Check group-based permissions via ExternalGroupMapping
+            if (groups != null)
+            {
+                var roleIds = await GetRoleIdsForGroupsAsync(groups, ct);
+                if (roleIds.Any())
                 {
-                    _logger.LogDebug("Permission granted via group for subject {SubjectExternalId}", subjectExternalId);
-                    return new PermissionCheckResult(true);
+                    var hasGroupPermission = await _permissionRepository.HasPermissionForRolesAsync(
+                        roleIds,
+                        permission,
+                        resourceInstanceId,
+                        ct);
+
+                    if (hasGroupPermission)
+                    {
+                        _logger.LogDebug("Permission granted via group for subject {SubjectExternalId}", subjectExternalId);
+                        return new PermissionCheckResult(true);
+                    }
                 }
             }
-        }
 
-        return new PermissionCheckResult(false, "Permission denied");
+            return new PermissionCheckResult(false, "Permission denied");
+        }
     }
 
     public async Task<PermissionCheckResult> CheckAnyPermissionAsync(
