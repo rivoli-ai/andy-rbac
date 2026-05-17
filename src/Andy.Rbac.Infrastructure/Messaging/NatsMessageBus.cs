@@ -204,10 +204,20 @@ public sealed class NatsMessageBus : IMessageBus, IAsyncDisposable
 
     private static void RecordGenerationBreach(string direction, string subject)
     {
+        // OT7 (rivoli-ai/conductor#1265). Tags renamed to semconv
+        // messaging.* + peer.service per docs/semconv-compliance.md.
+        // Legacy tags dual-emit during the 0.2.4 transition window
+        // and disappear in Andy.Telemetry 0.3.0.
+        var subjectRoot = TruncateSubjectRoot(subject);
         _generationBreachCounter.Add(1,
+            new KeyValuePair<string, object?>("peer.service", ServiceTag),
+            new KeyValuePair<string, object?>("messaging.operation.name", direction),
+            new KeyValuePair<string, object?>("messaging.destination.name", subjectRoot),
+            new KeyValuePair<string, object?>("messaging.system", "nats"),
+            // deprecated; removed in Andy.Telemetry 0.3.0
             new KeyValuePair<string, object?>("service", ServiceTag),
             new KeyValuePair<string, object?>("direction", direction),
-            new KeyValuePair<string, object?>("subject_root", TruncateSubjectRoot(subject)));
+            new KeyValuePair<string, object?>("subject_root", subjectRoot));
     }
 
     // Keep at most the first three dot-segments so a runaway breach storm

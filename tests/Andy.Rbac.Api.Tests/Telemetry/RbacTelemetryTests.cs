@@ -81,6 +81,13 @@ public class RbacTelemetryTests
         spans.Should().ContainSingle("PermissionCheck must always emit exactly one span");
         var span = spans[0];
         span.OperationName.Should().Be("PermissionCheck");
+        // OT7 (rivoli-ai/conductor#1265). Dual-emit: the new
+        // `andy.rbac.*` namespace and the legacy `rbac.*` names
+        // both ship until Andy.Telemetry 0.3.0.
+        span.GetTagItem("andy.rbac.permission").Should().Be("andy.test.read");
+        span.GetTagItem("andy.rbac.outcome").Should().Be("denied");
+        // Legacy names — deprecated but still asserted to catch a
+        // premature removal during the 0.2.4 transition window.
         span.GetTagItem("rbac.permission").Should().Be("andy.test.read");
         span.GetTagItem("rbac.outcome").Should().Be("denied");
     }
