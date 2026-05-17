@@ -29,6 +29,9 @@ bld/
 *.snupkg
 **/[Pp]ackages/*
 !**/[Pp]ackages/build/
+# OT4 (rivoli-ai/conductor#1262) — whitelist locally-vendored packages
+# (Andy.Telemetry 0.2.0 isn't yet published to a shared NuGet feed).
+!local-packages/*.nupkg
 
 # Build artifacts
 artifacts/
