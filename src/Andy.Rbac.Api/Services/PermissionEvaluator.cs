@@ -36,21 +36,34 @@ public class PermissionEvaluator : IPermissionEvaluator
         // waterfall and the dashboards line up on the same data.
         using var activity = RbacTelemetry.ActivitySource.StartActivity(
             "PermissionCheck", ActivityKind.Internal);
-        activity?.SetTag("rbac.permission", permission);
-        activity?.SetTag("rbac.subject_external_id", subjectExternalId);
+        // OT7 (rivoli-ai/conductor#1265). Attributes renamed under the
+        // `andy.rbac.*` namespace per docs/semconv-compliance.md. The
+        // legacy `rbac.*` names emit alongside for one release per the
+        // OT1 dual-emit precedent so existing dashboards keep working.
+        activity?.SetTag("andy.rbac.permission", permission);
+        activity?.SetTag("andy.rbac.subject_external_id", subjectExternalId);
+        activity?.SetTag("rbac.permission", permission);                  // deprecated; removed in 0.3.0
+        activity?.SetTag("rbac.subject_external_id", subjectExternalId);  // deprecated; removed in 0.3.0
         if (!string.IsNullOrEmpty(resourceInstanceId))
-            activity?.SetTag("rbac.resource_instance_id", resourceInstanceId);
+        {
+            activity?.SetTag("andy.rbac.resource_instance_id", resourceInstanceId);
+            activity?.SetTag("rbac.resource_instance_id", resourceInstanceId); // deprecated
+        }
 
         var result = await EvaluateAsync();
 
         var outcome = result.Allowed ? "granted" : "denied";
-        activity?.SetTag("rbac.outcome", outcome);
+        activity?.SetTag("andy.rbac.outcome", outcome);
+        activity?.SetTag("rbac.outcome", outcome); // deprecated; removed in 0.3.0
         if (!result.Allowed && !string.IsNullOrEmpty(result.Reason))
-            activity?.SetTag("rbac.reason", result.Reason);
+        {
+            activity?.SetTag("andy.rbac.reason", result.Reason);
+            activity?.SetTag("rbac.reason", result.Reason); // deprecated
+        }
         RbacTelemetry.ChecksTotal.Add(
             1,
-            new KeyValuePair<string, object?>("rbac.outcome", outcome),
-            new KeyValuePair<string, object?>("rbac.permission", permission));
+            new KeyValuePair<string, object?>("andy.rbac.outcome", outcome),
+            new KeyValuePair<string, object?>("andy.rbac.permission", permission));
         return result;
 
         async Task<PermissionCheckResult> EvaluateAsync()
