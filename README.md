@@ -85,7 +85,7 @@ dotnet add package Andy.Rbac.Client
 // Add to Program.cs
 builder.Services.AddRbacClient(options =>
 {
-    options.BaseUrl = "https://rbac-api.example.com";
+    options.ApiBaseUrl = "https://rbac-api.example.com";
     options.ApplicationCode = "my-app";
 });
 
@@ -112,8 +112,8 @@ Examples:
 ## API Endpoints
 
 ### Permission Checking
-- `POST /api/check/permission` - Check single permission
-- `POST /api/check/any-permission` - Check if user has any of the permissions
+- `POST /api/check` - Check single permission
+- `POST /api/check/any` - Check if user has any of the permissions
 - `GET /api/check/permissions/{subjectId}` - Get all permissions for a user
 - `GET /api/check/roles/{subjectId}` - Get all roles for a user
 

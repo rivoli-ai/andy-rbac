@@ -37,10 +37,9 @@ Content-Type: application/json
 
 {
   "subjectId": "user-123",
-  "resourceType": "issue",
-  "action": "delete",
-  "resourceId": "issue-456"
+  "permission": "issues:issue:delete",
+  "resourceInstanceId": "issue-456"
 }
 ```
 
-The response returns `allowed: true` or `allowed: false`.
+The response returns `allowed: true` or `allowed: false` plus a `reason` string.

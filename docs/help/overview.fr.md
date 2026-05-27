@@ -12,7 +12,7 @@ Andy RBAC est le service de contrôle d'accès basé sur les rôles de l'écosys
 ## Ce qu'il fait
 
 - Maintient un catalogue versionné de rôles, de types de ressources et des permissions que chaque rôle accorde.
-- Évalue les vérifications de permission via `POST /api/v1/permissions/check` — la couture canonique que chaque autre service utilise pour l'autorisation.
+- Évalue les vérifications de permission via `POST /api/check` — la couture canonique que chaque autre service utilise pour l'autorisation.
 - Prend en charge l'héritage de rôles afin que les rôles dérivés se composent sans copier les listes de permissions.
 - Met en cache les évaluations récentes pour garder le chemin commun de vérification sous la milliseconde.
 - Expose un catalogue en lecture seule que l'interface Conductor utilise pour afficher les panneaux « ce que cet utilisateur peut faire ».

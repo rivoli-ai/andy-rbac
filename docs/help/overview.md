@@ -12,7 +12,7 @@ Andy RBAC is the role-based access control service for the Andy ecosystem. It ow
 ## What it does
 
 - Maintains a versioned catalog of roles, resource types, and the permissions each role grants.
-- Evaluates permission checks via `POST /api/v1/permissions/check` — the canonical seam every other service uses for authorization.
+- Evaluates permission checks via `POST /api/check` — the canonical seam every other service uses for authorization.
 - Supports role inheritance so derived roles compose without copying permission lists.
 - Caches recent evaluations to keep the common-path check under a millisecond.
 - Surfaces a read-only catalog the Conductor UI uses to render "what can this user do" panels.
