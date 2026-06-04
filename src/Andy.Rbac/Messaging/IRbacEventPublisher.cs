@@ -15,6 +15,7 @@ namespace Andy.Rbac.Messaging;
 //   andy.rbac.events.role.{role_id}.{created|updated|deleted}
 //   andy.rbac.events.subject_role.{assignment_id}.{granted|revoked}
 //   andy.rbac.events.policy.{policy_id}.{created|updated|deleted|retention_changed}
+//   andy.rbac.events.grant.{grant_id}.{revoked|expired}   ← SM.2.11
 public interface IRbacEventPublisher
 {
     void RoleCreated(RoleCreated payload, MessageHeaders? headers = null);
@@ -30,4 +31,12 @@ public interface IRbacEventPublisher
     // (alongside the generic PolicyUpdated). Consumers (rivoli-ai/andy-tasks#74)
     // dedupe on `ChangeId` for at-least-once delivery semantics.
     void RetentionChanged(RetentionChanged payload, MessageHeaders? headers = null);
+
+    // SM.2.11 — backend-pushed grant lifecycle events. Callers: GrantService
+    // (admin revoke) and GrantExpiryWorker (server-side expiry sweep).
+    // Consumers: Conductor GrantLifecycleEventSource → ConductorEventBus →
+    // PermissionGrant aggregate (SM.10). The push makes a grant inert in
+    // Conductor WITHOUT waiting for the next gate consultation.
+    void GrantRevoked(GrantRevoked payload, MessageHeaders? headers = null);
+    void GrantExpired(GrantExpired payload, MessageHeaders? headers = null);
 }
