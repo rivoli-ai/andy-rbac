@@ -62,6 +62,11 @@ builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<IPolicyService, PolicyService>();
+// SM.2.11 — grant lifecycle (admin revoke + server-side expiry push).
+builder.Services.AddScoped<IGrantService, GrantService>();
+builder.Services.Configure<GrantExpiryWorkerOptions>(
+    builder.Configuration.GetSection(GrantExpiryWorkerOptions.SectionName));
+builder.Services.AddHostedService<GrantExpiryWorker>();
 
 // Epic AL — NATS messaging substrate.
 //

@@ -175,4 +175,74 @@ public class RbacEventPublisherTests
 
         ctx.Outbox.Should().BeEmpty();
     }
+
+    // SM.2.11 — GrantRevoked / GrantExpired outbox staging
+
+    [Fact]
+    public async Task GrantRevoked_stages_outbox_row_with_correct_subject_and_payload()
+    {
+        var options = new DbContextOptionsBuilder<Andy.Rbac.Infrastructure.Data.RbacDbContext>()
+            .UseInMemoryDatabase($"db-{Guid.NewGuid()}")
+            .Options;
+        await using var ctx = new Andy.Rbac.Infrastructure.Data.RbacDbContext(options);
+        var publisher = new RbacEventPublisher(ctx);
+
+        var grantId = Guid.NewGuid();
+        var subjectId = Guid.NewGuid();
+        publisher.GrantRevoked(new GrantRevoked(
+            GrantId: grantId,
+            Principal: "user-abc",
+            SubjectId: subjectId,
+            PermissionCode: "andy-docs:document:read",
+            ScopeResourceInstanceId: "doc-99",
+            RevokedByPrincipal: "admin-xyz",
+            RevokedAt: DateTimeOffset.UtcNow));
+        await ctx.SaveChangesAsync();
+
+        var entry = await ctx.Outbox.SingleAsync();
+        entry.Subject.Should().Be($"andy.rbac.events.grant.{grantId}.revoked");
+        entry.PayloadType.Should().Be(typeof(GrantRevoked).FullName);
+        entry.PayloadJson.Should().Contain("\"grant_id\"");
+        entry.PayloadJson.Should().Contain("\"principal\"");
+        entry.PayloadJson.Should().Contain("user-abc");
+        entry.PayloadJson.Should().Contain("andy-docs:document:read");
+        entry.PayloadJson.Should().Contain("doc-99");
+        entry.PayloadJson.Should().Contain("admin-xyz");
+        entry.Generation.Should().Be(0);
+        entry.PublishedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GrantExpired_stages_outbox_row_with_correct_subject_and_payload()
+    {
+        var options = new DbContextOptionsBuilder<Andy.Rbac.Infrastructure.Data.RbacDbContext>()
+            .UseInMemoryDatabase($"db-{Guid.NewGuid()}")
+            .Options;
+        await using var ctx = new Andy.Rbac.Infrastructure.Data.RbacDbContext(options);
+        var publisher = new RbacEventPublisher(ctx);
+
+        var grantId = Guid.NewGuid();
+        var subjectId = Guid.NewGuid();
+        var expiredAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        publisher.GrantExpired(new GrantExpired(
+            GrantId: grantId,
+            Principal: "user-def",
+            SubjectId: subjectId,
+            PermissionCode: "andy-docs:document:write",
+            ScopeResourceInstanceId: "doc-100",
+            ExpiredAt: expiredAt,
+            OccurredAt: DateTimeOffset.UtcNow));
+        await ctx.SaveChangesAsync();
+
+        var entry = await ctx.Outbox.SingleAsync();
+        entry.Subject.Should().Be($"andy.rbac.events.grant.{grantId}.expired");
+        entry.PayloadType.Should().Be(typeof(GrantExpired).FullName);
+        entry.PayloadJson.Should().Contain("\"grant_id\"");
+        entry.PayloadJson.Should().Contain("\"expired_at\"");
+        entry.PayloadJson.Should().Contain("user-def");
+        entry.PayloadJson.Should().Contain("andy-docs:document:write");
+        entry.PayloadJson.Should().Contain("doc-100");
+        entry.Generation.Should().Be(0);
+        entry.PublishedAt.Should().BeNull();
+    }
 }

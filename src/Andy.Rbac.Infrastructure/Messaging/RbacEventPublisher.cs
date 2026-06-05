@@ -50,6 +50,13 @@ public sealed class RbacEventPublisher : IRbacEventPublisher
     public void RetentionChanged(RetentionChanged payload, MessageHeaders? headers = null)
         => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.retention_changed", payload, headers);
 
+    // SM.2.11 — grant lifecycle push signals.
+    public void GrantRevoked(GrantRevoked payload, MessageHeaders? headers = null)
+        => Stage($"{SubjectPrefix}.grant.{payload.GrantId}.revoked", payload, headers);
+
+    public void GrantExpired(GrantExpired payload, MessageHeaders? headers = null)
+        => Stage($"{SubjectPrefix}.grant.{payload.GrantId}.expired", payload, headers);
+
     private void Stage(string subject, object payload, MessageHeaders? headers)
     {
         headers ??= MessageHeaders.NewRoot();
