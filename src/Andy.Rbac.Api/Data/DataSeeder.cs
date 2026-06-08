@@ -242,7 +242,131 @@ public static class DataSeeder
         // manifest-schema extension separate from this fix.
         await SeedManifestAdminRolePermissionsAsync(db, manifests, logger, ct);
 
+        // Must run AFTER admin-permission seeding: that step materialises a
+        // Permission row for every app's resourceType×action, so the
+        // cross-service permissions a service principal references already
+        // exist by the time we bind them here.
+        await SeedServicePrincipalGrantsAsync(db, manifests, logger, ct);
+
         await SeedTestUserRoleBindingsAsync(db, manifests, configuration, logger, ct);
+    }
+
+    /// <summary>
+    /// Provisions RBAC subjects + grants for service-to-service (M2M)
+    /// principals declared via <c>rbac.servicePrincipal</c> in a manifest.
+    /// andy-auth issues client_credentials tokens with <c>sub = clientId</c>
+    /// and no email claim, so <see cref="Middleware.EnsureSubjectMiddleware"/>
+    /// deliberately does NOT auto-provision them — without this seeding every
+    /// service-to-service <c>[RequirePermission]</c> call fails with
+    /// "Subject not found". For each declared principal we ensure a
+    /// <see cref="SubjectType.Service"/> subject, a cross-application
+    /// <c>service:{clientId}</c> role carrying exactly the declared
+    /// permissions (least privilege — no blanket service role), and the
+    /// subject→role assignment. Idempotent across restarts.
+    /// </summary>
+    public static async Task SeedServicePrincipalGrantsAsync(
+        RbacDbContext db,
+        IReadOnlyList<RegistrationManifest> manifests,
+        ILogger logger,
+        CancellationToken ct = default)
+    {
+        foreach (var manifest in manifests)
+        {
+            var sp = manifest.Rbac?.ServicePrincipal;
+            if (sp is null
+                || string.IsNullOrWhiteSpace(sp.ClientId)
+                || sp.Permissions is null
+                || sp.Permissions.Length == 0)
+            {
+                continue;
+            }
+
+            // 1. The Service subject (sub == clientId on the M2M token).
+            var subject = await db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == sp.ClientId, ct);
+            if (subject is null)
+            {
+                subject = new Subject
+                {
+                    ExternalId = sp.ClientId,
+                    Provider = "andy-auth",
+                    Type = SubjectType.Service,
+                    DisplayName = sp.ClientId,
+                    IsActive = true,
+                    LastSeenAt = DateTimeOffset.UtcNow,
+                };
+                db.Subjects.Add(subject);
+                await db.SaveChangesAsync(ct);
+                logger.LogInformation("[manifest] Provisioned Service subject {ClientId}.", sp.ClientId);
+            }
+
+            // 2. A dedicated cross-application role (ApplicationId == null) that
+            //    carries only this principal's declared permissions.
+            var roleCode = $"service:{sp.ClientId}";
+            var role = await db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode && r.ApplicationId == null, ct);
+            if (role is null)
+            {
+                role = new Role
+                {
+                    ApplicationId = null,
+                    Code = roleCode,
+                    Name = $"Service principal: {sp.ClientId}",
+                    Description = $"Cross-service permissions for the {sp.ClientId} M2M client.",
+                    IsSystem = true,
+                };
+                db.Roles.Add(role);
+                await db.SaveChangesAsync(ct);
+            }
+
+            // 3. Bind each fully-qualified "app:resourceType:action" permission.
+            var bound = 0;
+            foreach (var code in sp.Permissions)
+            {
+                var parts = code.Split(':');
+                if (parts.Length != 3)
+                {
+                    logger.LogWarning(
+                        "[manifest] Service principal {ClientId}: ignoring malformed permission '{Code}' (expected app:resourceType:action).",
+                        sp.ClientId, code);
+                    continue;
+                }
+
+                var permission = await db.Permissions.FirstOrDefaultAsync(p =>
+                    p.ResourceType.Application != null &&
+                    p.ResourceType.Application.Code == parts[0] &&
+                    p.ResourceType.Code == parts[1] &&
+                    p.Action.Code == parts[2], ct);
+
+                if (permission is null)
+                {
+                    logger.LogWarning(
+                        "[manifest] Service principal {ClientId}: permission '{Code}' not found — is the owning service's manifest seeded?",
+                        sp.ClientId, code);
+                    continue;
+                }
+
+                if (!await db.RolePermissions.AnyAsync(rp => rp.RoleId == role.Id && rp.PermissionId == permission.Id, ct))
+                {
+                    db.RolePermissions.Add(new RolePermission { RoleId = role.Id, PermissionId = permission.Id });
+                    bound++;
+                }
+            }
+            if (bound > 0) await db.SaveChangesAsync(ct);
+
+            // 4. The subject→role assignment (global, non-expiring).
+            if (!await db.SubjectRoles.AnyAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id, ct))
+            {
+                db.SubjectRoles.Add(new SubjectRole
+                {
+                    SubjectId = subject.Id,
+                    RoleId = role.Id,
+                });
+                await db.SaveChangesAsync(ct);
+            }
+
+            logger.LogInformation(
+                "[manifest] Service principal {ClientId} bound to {Count} permission(s).",
+                sp.ClientId, sp.Permissions.Length);
+        }
     }
 
     /// <summary>

@@ -34,7 +34,26 @@ public sealed record RegistrationRbacInfo(
     [property: JsonPropertyName("description")]     string? Description,
     [property: JsonPropertyName("resourceTypes")]   RegistrationResourceType[]? ResourceTypes,
     [property: JsonPropertyName("roles")]           RegistrationRole[]? Roles,
-    [property: JsonPropertyName("testUserRole")]    string? TestUserRole
+    [property: JsonPropertyName("testUserRole")]    string? TestUserRole,
+    [property: JsonPropertyName("servicePrincipal")] RegistrationServicePrincipal? ServicePrincipal
+);
+
+/// <summary>
+/// Declares the cross-service permissions a service's machine-to-machine
+/// (client_credentials) principal needs. andy-auth issues these tokens with
+/// <c>sub = clientId</c> and no <c>email</c> claim, so they are NOT auto-
+/// provisioned as RBAC subjects (see EnsureSubjectMiddleware). Without an
+/// explicit grant every service-to-service <c>[RequirePermission]</c> call
+/// 403s. The seeder provisions a <see cref="Andy.Rbac.Models.SubjectType.Service"/>
+/// subject for <see cref="ClientId"/> and binds it (via a generated
+/// <c>service:{clientId}</c> role) to each fully-qualified permission code in
+/// <see cref="Permissions"/> (e.g. <c>"andy-agents:agent:read"</c>). The
+/// permission must be one the OWNING service's manifest declares — least
+/// privilege, no blanket service role.
+/// </summary>
+public sealed record RegistrationServicePrincipal(
+    [property: JsonPropertyName("clientId")]    string ClientId,
+    [property: JsonPropertyName("permissions")] string[]? Permissions
 );
 
 public sealed record RegistrationResourceType(

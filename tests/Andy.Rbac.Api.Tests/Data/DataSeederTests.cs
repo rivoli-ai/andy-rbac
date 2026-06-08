@@ -1,5 +1,7 @@
 using Andy.Rbac.Api.Data;
 using Andy.Rbac.Infrastructure.Data;
+using Andy.Rbac.Infrastructure.Repositories;
+using Andy.Rbac.Models;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -364,6 +366,104 @@ public class DataSeederTests
             (await context.Subjects.CountAsync(s => s.ExternalId == DataSeeder.TestUserWellKnownExternalId))
                 .Should().Be(1);
             (await context.SubjectRoles.CountAsync()).Should().Be(1);
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    // -- service-principal grants (M2M cross-service authz) -----------------
+    //
+    // Regression for the platform-wide M2M authz hole: andy-auth issues
+    // client_credentials tokens with sub=clientId and no email claim, so
+    // EnsureSubjectMiddleware never provisions them — every service-to-service
+    // [RequirePermission] call 403'd ("Subject not found: andy-tasks-api"),
+    // which left the planner's andy-agents catalog fetch empty and produced
+    // agentless tasks. A manifest now declares `rbac.servicePrincipal` and the
+    // seeder provisions a Service subject + a least-privilege role carrying
+    // exactly the declared cross-service permissions.
+
+    private const string SampleManifestWithServicePrincipal = """
+        {
+          "service": {
+            "name": "andy-svcprin-test",
+            "displayName": "Andy ServicePrincipal (Test Manifest)",
+            "description": "Fixture",
+            "embeddedProxyPrefix": "/svcprin"
+          },
+          "rbac": {
+            "applicationCode": "andy-svcprin-test",
+            "applicationName": "Andy ServicePrincipal (Test)",
+            "description": "Fixture for DataSeederTests",
+            "resourceTypes": [
+              { "code": "thing", "name": "Thing", "supportsInstances": false }
+            ],
+            "roles": [
+              { "code": "admin", "name": "Administrator", "isSystem": true }
+            ],
+            "servicePrincipal": {
+              "clientId": "svcprin-test-api",
+              "permissions": ["andy-svcprin-test:thing:read"]
+            }
+          }
+        }
+        """;
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_WithServicePrincipal_ProvisionsServiceSubjectAndGrantsPermission()
+    {
+        using var context = CreateContext();
+        await DataSeeder.SeedAsync(context); // populates the global Actions catalogue
+        var manifestPath = WriteTempManifest(SampleManifestWithServicePrincipal);
+        try
+        {
+            await DataSeeder.SeedFromManifestsAsync(context, ConfigurationWithManifest(manifestPath), NullLogger.Instance);
+
+            // A Service-typed subject was provisioned for the client id.
+            var subject = await context.Subjects.FirstOrDefaultAsync(s => s.ExternalId == "svcprin-test-api");
+            subject.Should().NotBeNull();
+            subject!.Type.Should().Be(SubjectType.Service);
+            subject.IsActive.Should().BeTrue();
+
+            // …bound via a cross-application service:{clientId} role…
+            var role = await context.Roles.FirstOrDefaultAsync(r => r.Code == "service:svcprin-test-api");
+            role.Should().NotBeNull();
+            role!.ApplicationId.Should().BeNull();
+
+            var assignment = await context.SubjectRoles.FirstOrDefaultAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id);
+            assignment.Should().NotBeNull();
+
+            // …and the end-to-end check the proxy actually runs now passes.
+            var repo = new PermissionRepository(context);
+            (await repo.HasPermissionAsync(subject.Id, "andy-svcprin-test:thing:read"))
+                .Should().BeTrue();
+            // Least privilege: an undeclared permission is still denied.
+            (await repo.HasPermissionAsync(subject.Id, "andy-svcprin-test:thing:write"))
+                .Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(manifestPath);
+        }
+    }
+
+    [Fact]
+    public async Task SeedFromManifestsAsync_ServicePrincipal_IsIdempotent()
+    {
+        using var context = CreateContext();
+        await DataSeeder.SeedAsync(context); // populates the global Actions catalogue
+        var manifestPath = WriteTempManifest(SampleManifestWithServicePrincipal);
+        try
+        {
+            await DataSeeder.SeedFromManifestsAsync(context, ConfigurationWithManifest(manifestPath), NullLogger.Instance);
+            await DataSeeder.SeedFromManifestsAsync(context, ConfigurationWithManifest(manifestPath), NullLogger.Instance);
+
+            (await context.Subjects.CountAsync(s => s.ExternalId == "svcprin-test-api")).Should().Be(1);
+            (await context.Roles.CountAsync(r => r.Code == "service:svcprin-test-api")).Should().Be(1);
+            var role = await context.Roles.FirstAsync(r => r.Code == "service:svcprin-test-api");
+            (await context.RolePermissions.CountAsync(rp => rp.RoleId == role.Id)).Should().Be(1);
+            (await context.SubjectRoles.CountAsync(sr => sr.RoleId == role.Id)).Should().Be(1);
         }
         finally
         {
