@@ -43,6 +43,12 @@ public class DataSeederTests
         actions.Should().Contain(a => a.Code == "execute");
         actions.Should().Contain(a => a.Code == "export");
         actions.Should().Contain(a => a.Code == "import");
+        // Policy-evaluation verbs — without these the resourceType×action
+        // materialisation never creates `andy-policies:plan:evaluate(-task)`,
+        // so andy-tasks' service principal can't be granted them and the
+        // execution-time policy gate 403s.
+        actions.Should().Contain(a => a.Code == "evaluate");
+        actions.Should().Contain(a => a.Code == "evaluate-task");
     }
 
     [Fact]

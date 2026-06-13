@@ -560,6 +560,16 @@ public static class DataSeeder
             new Action { Code = "execute", Name = "Execute", Description = "Execute or run resource", SortOrder = 6 },
             new Action { Code = "export", Name = "Export", Description = "Export resource data", SortOrder = 7 },
             new Action { Code = "import", Name = "Import", Description = "Import resource data", SortOrder = 8 },
+            // Policy evaluation verbs. andy-policies' manifest declares
+            // `andy-policies:plan:evaluate` (plan-finalize gate) and
+            // `andy-policies:plan:evaluate-task` (per-task/run gate, #1944).
+            // Permissions are materialised as resourceType×action from THIS
+            // global vocabulary, so without these two actions the evaluate
+            // permissions are never created — the andy-tasks service principal
+            // can't be granted them and every evaluate/evaluate-task call from
+            // andy-tasks 403s (blocking plan execution's policy gate).
+            new Action { Code = "evaluate", Name = "Evaluate", Description = "Evaluate resource against policy", SortOrder = 9 },
+            new Action { Code = "evaluate-task", Name = "Evaluate Task", Description = "Evaluate a task/run against policy", SortOrder = 10 },
         };
 
         foreach (var action in actions)
