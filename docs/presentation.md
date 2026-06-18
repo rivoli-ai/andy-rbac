@@ -253,11 +253,12 @@ OIDC login via Andy Auth. Actions themselves are guarded by RBAC client checks (
 ## CLI (`Andy.Rbac.Cli`)
 
 ```bash
-andy-rbac applications list
-andy-rbac roles assign --role admin --subject <id>
-andy-rbac users provision --provider andy-auth --external-id <id>
-andy-rbac teams create --code dev-team
+andy-rbac app list
+andy-rbac role assign --role admin --subject <id>
+andy-rbac user provision --provider andy-auth --external-id <id>
+andy-rbac team create --code dev-team
 andy-rbac check permission <user-id> andy-docs:document:read
+andy-rbac policy list
 ```
 
 Thin wrapper over the REST API — useful for ops scripts and CI setup.
@@ -293,7 +294,7 @@ Optional client-side cache short-circuits repeat checks.
 |------|---------|
 | 5003 / 7003 | RBAC API HTTPS (dev/docker) |
 | 5180 | Blazor admin UI |
-| 5432 / 5433 | PostgreSQL |
+| 5432 / 7433 | PostgreSQL (in-container / host-published) |
 
 Key settings:
 
@@ -310,7 +311,7 @@ Key settings:
 
 `docker-compose.yml`:
 
-- `postgres:16-alpine` (port 5433)
+- `postgres:16-alpine` (host port 7433 → container 5432)
 - API (`7003:8443` / `7004:8080`)
 - Web (`5180:8443` / `5181:8080`)
 
