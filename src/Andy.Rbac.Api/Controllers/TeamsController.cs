@@ -74,6 +74,7 @@ public class TeamsController : ControllerBase
             .ThenInclude(m => m.Subject)
             .Include(t => t.TeamRoles)
             .ThenInclude(tr => tr.Role)
+            .ThenInclude(r => r.Application)
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id, ct);
 
@@ -98,6 +99,7 @@ public class TeamsController : ControllerBase
             .ThenInclude(m => m.Subject)
             .Include(t => t.TeamRoles)
             .ThenInclude(tr => tr.Role)
+            .ThenInclude(r => r.Application)
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Code == code, ct);
 
@@ -258,15 +260,16 @@ public class TeamsController : ControllerBase
     [HttpPost("{id:guid}/roles")]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> AssignTeamRole(Guid id, [FromBody] AssignTeamRoleRequest request, CancellationToken ct)
     {
         var team = await _db.Teams.FindAsync([id], ct);
         if (team == null)
             return NotFound("Team not found");
 
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == request.RoleCode, ct);
+        var (role, roleError) = await ResolveRoleAsync(request.RoleCode, request.ApplicationCode, ct);
         if (role == null)
-            return NotFound($"Role '{request.RoleCode}' not found");
+            return roleError!;
 
         if (await _db.TeamRoles.AnyAsync(tr => tr.TeamId == id && tr.RoleId == role.Id && tr.ResourceInstanceId == request.ResourceInstanceId, ct))
             return BadRequest("Role already assigned to team");
@@ -293,11 +296,17 @@ public class TeamsController : ControllerBase
     [HttpDelete("{id:guid}/roles/{roleCode}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RevokeTeamRole(Guid id, string roleCode, [FromQuery] string? resourceInstanceId, CancellationToken ct)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RevokeTeamRole(
+        Guid id,
+        string roleCode,
+        [FromQuery] string? resourceInstanceId,
+        [FromQuery] string? applicationCode,
+        CancellationToken ct)
     {
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode, ct);
+        var (role, roleError) = await ResolveRoleAsync(roleCode, applicationCode, ct);
         if (role == null)
-            return NotFound($"Role '{roleCode}' not found");
+            return roleError!;
 
         var teamRole = await _db.TeamRoles
             .FirstOrDefaultAsync(tr => tr.TeamId == id && tr.RoleId == role.Id && tr.ResourceInstanceId == resourceInstanceId, ct);
@@ -309,6 +318,22 @@ public class TeamsController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Resolves a role by (code, applicationCode) via the shared
+    /// <see cref="Services.RoleResolver"/>: an ambiguous bare code is a 400
+    /// listing the candidate applications, never a silent pick of an
+    /// arbitrary application's role.
+    /// </summary>
+    private async Task<(Role? Role, IActionResult? Error)> ResolveRoleAsync(
+        string roleCode, string? applicationCode, CancellationToken ct)
+    {
+        var (role, kind, error) = await Services.RoleResolver.ResolveAsync(_db, roleCode, applicationCode, ct);
+        if (role != null)
+            return (role, null);
+
+        return (null, kind == Services.RoleResolutionErrorKind.Ambiguous ? BadRequest(error) : NotFound(error));
     }
 
     private static TeamDetailDto MapToDetailDto(Team t) => new()
@@ -334,6 +359,7 @@ public class TeamsController : ControllerBase
         {
             RoleCode = tr.Role.Code,
             RoleName = tr.Role.Name,
+            ApplicationCode = tr.Role.Application?.Code,
             ResourceInstanceId = tr.ResourceInstanceId,
             GrantedAt = tr.GrantedAt,
             ExpiresAt = tr.ExpiresAt
@@ -373,6 +399,7 @@ public record TeamRoleDto
 {
     public required string RoleCode { get; init; }
     public required string RoleName { get; init; }
+    public string? ApplicationCode { get; init; }
     public string? ResourceInstanceId { get; init; }
     public DateTimeOffset GrantedAt { get; init; }
     public DateTimeOffset? ExpiresAt { get; init; }
@@ -381,4 +408,8 @@ public record TeamRoleDto
 public record CreateTeamRequest(string Code, string Name, string? Description = null, string? ParentTeamCode = null, string? ApplicationCode = null);
 public record UpdateTeamRequest(string? Name = null, string? Description = null, bool? IsActive = null);
 public record AddTeamMemberRequest(string SubjectExternalId, string SubjectProvider, TeamMembershipRole MembershipRole = TeamMembershipRole.Member);
-public record AssignTeamRoleRequest(string RoleCode, string? ResourceInstanceId = null, DateTimeOffset? ExpiresAt = null);
+public record AssignTeamRoleRequest(
+    string RoleCode,
+    string? ResourceInstanceId = null,
+    DateTimeOffset? ExpiresAt = null,
+    string? ApplicationCode = null);

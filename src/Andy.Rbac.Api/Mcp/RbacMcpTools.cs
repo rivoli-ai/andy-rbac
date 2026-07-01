@@ -214,9 +214,10 @@ public class RbacMcpTools
     [Description("Assign a role to a team (all members inherit this role).")]
     public async Task<string> AssignRoleToTeam(
         [Description("Team code")] string teamCode,
-        [Description("Role code to assign")] string roleCode)
+        [Description("Role code to assign")] string roleCode,
+        [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null)
     {
-        var message = await _roleService.AssignToTeamAsync(teamCode, roleCode);
+        var message = await _roleService.AssignToTeamAsync(teamCode, roleCode, applicationCode);
         _logger.LogInformation("MCP: {Message}", message);
         return message;
     }

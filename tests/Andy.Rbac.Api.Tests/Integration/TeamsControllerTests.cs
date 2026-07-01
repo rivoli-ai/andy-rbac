@@ -260,7 +260,9 @@ public class TeamsControllerTests : IClassFixture<RbacWebApplicationFactory>
     {
         // Arrange
         var teamId = Guid.Parse("77777777-7777-7777-7777-777777777777");
-        var request = new AssignTeamRoleRequest("viewer");
+        // "viewer" also exists in seeder-created applications (subscription,
+        // narration), so the request must name the application explicitly.
+        var request = new AssignTeamRoleRequest("viewer", ApplicationCode: "test-app");
 
         // Act
         var response = await _client.PostAsJsonAsync($"/api/teams/{teamId}/roles", request);

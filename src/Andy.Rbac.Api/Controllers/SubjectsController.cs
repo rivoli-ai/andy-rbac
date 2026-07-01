@@ -289,44 +289,19 @@ public class SubjectsController : ControllerBase
     }
 
     /// <summary>
-    /// Resolves a role by code, scoped to an application when
-    /// <paramref name="applicationCode"/> is provided. Role codes are NOT
-    /// globally unique — the same code (e.g. "admin") exists once per
-    /// application — so a code-only lookup is only honoured when it is
-    /// unambiguous. An ambiguous code without an application scope is a
-    /// 400, never a silent pick of an arbitrary application's role.
+    /// Resolves a role by (code, applicationCode) via the shared
+    /// <see cref="Services.RoleResolver"/>: an ambiguous bare code is a 400
+    /// listing the candidate applications, never a silent pick of an
+    /// arbitrary application's role.
     /// </summary>
     private async Task<(Role? Role, IActionResult? Error)> ResolveRoleAsync(
         string roleCode, string? applicationCode, CancellationToken ct)
     {
-        var candidates = await _db.Roles
-            .Include(r => r.Application)
-            .Where(r => r.Code == roleCode)
-            .ToListAsync(ct);
+        var (role, kind, error) = await Services.RoleResolver.ResolveAsync(_db, roleCode, applicationCode, ct);
+        if (role != null)
+            return (role, null);
 
-        if (!string.IsNullOrEmpty(applicationCode))
-        {
-            var scoped = candidates
-                .FirstOrDefault(r => r.Application != null && r.Application.Code == applicationCode);
-            if (scoped == null)
-                return (null, NotFound($"Role '{roleCode}' not found in application '{applicationCode}'"));
-            return (scoped, null);
-        }
-
-        if (candidates.Count == 0)
-            return (null, NotFound($"Role '{roleCode}' not found"));
-
-        if (candidates.Count > 1)
-        {
-            var apps = candidates
-                .Select(r => r.Application?.Code ?? "(global)")
-                .OrderBy(c => c, StringComparer.Ordinal);
-            return (null, BadRequest(
-                $"Role code '{roleCode}' is ambiguous across applications: {string.Join(", ", apps)}. " +
-                "Specify applicationCode to select the intended role."));
-        }
-
-        return (candidates[0], null);
+        return (null, kind == Services.RoleResolutionErrorKind.Ambiguous ? BadRequest(error) : NotFound(error));
     }
 
     private static SubjectDto MapToDto(Subject s) => new()

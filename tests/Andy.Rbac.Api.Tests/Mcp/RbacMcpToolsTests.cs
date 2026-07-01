@@ -427,7 +427,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _roleServiceMock
-            .Setup(x => x.AssignToTeamAsync("team-1", "editor", It.IsAny<CancellationToken>()))
+            .Setup(x => x.AssignToTeamAsync("team-1", "editor", null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully assigned role 'editor' to team team-1");
 
         // Act
@@ -435,6 +435,25 @@ public class RbacMcpToolsTests
 
         // Assert
         result.Should().Contain("Successfully assigned");
+    }
+
+    [Fact]
+    public async Task AssignRoleToTeam_PassesApplicationCodeThrough()
+    {
+        // Arrange
+        var tools = CreateTools();
+        _roleServiceMock
+            .Setup(x => x.AssignToTeamAsync("team-1", "admin", "app-b", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("Successfully assigned role 'admin' to team 'team-1'");
+
+        // Act
+        var result = await tools.AssignRoleToTeam("team-1", "admin", "app-b");
+
+        // Assert
+        result.Should().Contain("Successfully assigned");
+        _roleServiceMock.Verify(
+            x => x.AssignToTeamAsync("team-1", "admin", "app-b", It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     // ==================== User Management Tests ====================

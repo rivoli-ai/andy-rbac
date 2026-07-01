@@ -12,7 +12,7 @@ public interface IRoleService
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
     Task<string> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
     Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
-    Task<string> AssignToTeamAsync(string teamCode, string roleCode, CancellationToken ct = default);
+    Task<string> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default);
 }
 
 public record RoleDetail(

@@ -285,56 +285,27 @@ public class RoleService : IRoleService
     }
 
     /// <summary>
-    /// Resolves a role by code, scoped to an application when
-    /// <paramref name="applicationCode"/> is provided. Role codes are NOT
-    /// globally unique — the same code (e.g. "admin") exists once per
-    /// application — so a code-only lookup is only honoured when it matches
-    /// exactly one role. An ambiguous code without an application scope
-    /// returns an error listing the candidate applications; we never
-    /// silently bind an arbitrary application's role.
+    /// Resolves a role by (code, applicationCode) via the shared
+    /// <see cref="RoleResolver"/>: an ambiguous bare code is an error listing
+    /// the candidate applications; we never silently bind an arbitrary
+    /// application's role.
     /// </summary>
     private async Task<(Role? Role, string? Error)> ResolveRoleAsync(
         string roleCode, string? applicationCode, CancellationToken ct)
     {
-        var candidates = await _db.Roles
-            .Include(r => r.Application)
-            .Where(r => r.Code == roleCode)
-            .ToListAsync(ct);
-
-        if (!string.IsNullOrEmpty(applicationCode))
-        {
-            var scoped = candidates
-                .FirstOrDefault(r => r.Application != null && r.Application.Code == applicationCode);
-            if (scoped == null)
-                return (null, $"Error: Role '{roleCode}' not found in application '{applicationCode}'");
-            return (scoped, null);
-        }
-
-        if (candidates.Count == 0)
-            return (null, $"Error: Role '{roleCode}' not found");
-
-        if (candidates.Count > 1)
-        {
-            var apps = candidates
-                .Select(r => r.Application?.Code ?? "(global)")
-                .OrderBy(c => c, StringComparer.Ordinal);
-            return (null,
-                $"Error: Role code '{roleCode}' is ambiguous across applications: {string.Join(", ", apps)}. " +
-                "Specify applicationCode to select the intended role.");
-        }
-
-        return (candidates[0], null);
+        var (role, _, error) = await RoleResolver.ResolveAsync(_db, roleCode, applicationCode, ct);
+        return role != null ? (role, null) : (null, $"Error: {error}");
     }
 
-    public async Task<string> AssignToTeamAsync(string teamCode, string roleCode, CancellationToken ct = default)
+    public async Task<string> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default)
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
             return $"Error: Team '{teamCode}' not found";
 
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode, ct);
+        var (role, roleError) = await ResolveRoleAsync(roleCode, applicationCode, ct);
         if (role == null)
-            return $"Error: Role '{roleCode}' not found";
+            return roleError!;
 
         if (await _db.TeamRoles.AnyAsync(tr => tr.TeamId == team.Id && tr.RoleId == role.Id, ct))
             return $"Role '{roleCode}' is already assigned to team";
