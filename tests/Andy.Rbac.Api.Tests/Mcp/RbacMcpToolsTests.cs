@@ -288,7 +288,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _roleServiceMock
-            .Setup(x => x.AssignToSubjectAsync("user-123", "admin", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AssignToSubjectAsync("user-123", "admin", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully assigned role 'admin' to user-123");
 
         // Act
@@ -297,7 +297,7 @@ public class RbacMcpToolsTests
         // Assert
         result.Should().Contain("Successfully assigned");
         _roleServiceMock.Verify(
-            x => x.AssignToSubjectAsync("user-123", "admin", null, It.IsAny<CancellationToken>()),
+            x => x.AssignToSubjectAsync("user-123", "admin", null, null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -307,7 +307,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _roleServiceMock
-            .Setup(x => x.RevokeFromSubjectAsync("user-123", "admin", null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.RevokeFromSubjectAsync("user-123", "admin", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully revoked role 'admin' from user-123");
 
         // Act

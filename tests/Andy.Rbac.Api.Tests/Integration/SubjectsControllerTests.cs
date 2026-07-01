@@ -227,7 +227,9 @@ public class SubjectsControllerTests : IClassFixture<RbacWebApplicationFactory>
     {
         // Arrange
         var noRoleId = Guid.Parse("66666666-6666-6666-6666-666666666669");
-        var request = new SubjectAssignRoleRequest("viewer");
+        // "viewer" also exists in seeder-created applications (subscription,
+        // narration), so the request must name the application explicitly.
+        var request = new SubjectAssignRoleRequest("viewer", ApplicationCode: "test-app");
 
         // Act
         var response = await _client.PostAsJsonAsync($"/api/subjects/{noRoleId}/roles", request);

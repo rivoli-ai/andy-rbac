@@ -196,8 +196,10 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
     [Fact]
     public async Task RevokeRole_WithValidData_ReturnsOk()
     {
-        // Arrange - admin-user has admin role
-        var request = new AssignRoleRequest("admin-user", "admin");
+        // Arrange - admin-user has test-app's admin role. The production
+        // seeder also creates "admin" roles in other applications, so the
+        // code must be scoped — a bare ambiguous code is a 400 by design.
+        var request = new AssignRoleRequest("admin-user", "admin", ApplicationCode: "test-app");
 
         // Act
         var response = await _client.PostAsJsonAsync("/api/roles/revoke", request);
@@ -211,8 +213,8 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
     [Fact]
     public async Task RevokeRole_WithNoAssignment_ReturnsOk()
     {
-        // Arrange - viewer-user doesn't have admin role
-        var request = new AssignRoleRequest("viewer-user", "admin");
+        // Arrange - viewer-user doesn't have test-app's admin role
+        var request = new AssignRoleRequest("viewer-user", "admin", ApplicationCode: "test-app");
 
         // Act
         var response = await _client.PostAsJsonAsync("/api/roles/revoke", request);

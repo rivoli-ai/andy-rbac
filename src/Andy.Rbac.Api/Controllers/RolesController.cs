@@ -113,6 +113,7 @@ public class RolesController : ControllerBase
             request.SubjectExternalId,
             request.RoleCode,
             request.ResourceInstanceId,
+            request.ApplicationCode,
             ct);
 
         if (result.StartsWith("Error:"))
@@ -132,6 +133,7 @@ public class RolesController : ControllerBase
             request.SubjectExternalId,
             request.RoleCode,
             request.ResourceInstanceId,
+            request.ApplicationCode,
             ct);
 
         if (result.StartsWith("Error:"))
@@ -144,4 +146,5 @@ public class RolesController : ControllerBase
 public record AssignRoleRequest(
     string SubjectExternalId,
     string RoleCode,
-    string? ResourceInstanceId = null);
+    string? ResourceInstanceId = null,
+    string? ApplicationCode = null);

@@ -147,9 +147,10 @@ public class RbacMcpTools
     public async Task<string> AssignRoleToUser(
         [Description("External ID of the user")] string subjectExternalId,
         [Description("Role code to assign")] string roleCode,
-        [Description("Optional resource instance ID to scope the assignment")] string? resourceInstanceId = null)
+        [Description("Optional resource instance ID to scope the assignment")] string? resourceInstanceId = null,
+        [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null)
     {
-        var message = await _roleService.AssignToSubjectAsync(subjectExternalId, roleCode, resourceInstanceId);
+        var message = await _roleService.AssignToSubjectAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode);
         _logger.LogInformation("MCP: {Message}", message);
         return message;
     }
@@ -159,9 +160,10 @@ public class RbacMcpTools
     public async Task<string> RevokeRoleFromUser(
         [Description("External ID of the user")] string subjectExternalId,
         [Description("Role code to revoke")] string roleCode,
-        [Description("Optional resource instance ID")] string? resourceInstanceId = null)
+        [Description("Optional resource instance ID")] string? resourceInstanceId = null,
+        [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null)
     {
-        var message = await _roleService.RevokeFromSubjectAsync(subjectExternalId, roleCode, resourceInstanceId);
+        var message = await _roleService.RevokeFromSubjectAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode);
         _logger.LogInformation("MCP: {Message}", message);
         return message;
     }

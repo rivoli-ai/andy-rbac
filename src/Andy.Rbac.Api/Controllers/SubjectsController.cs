@@ -223,9 +223,9 @@ public class SubjectsController : ControllerBase
         if (subject == null)
             return NotFound("Subject not found");
 
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == request.RoleCode, ct);
+        var (role, roleError) = await ResolveRoleAsync(request.RoleCode, request.ApplicationCode, ct);
         if (role == null)
-            return NotFound($"Role '{request.RoleCode}' not found");
+            return roleError!;
 
         // Check if already assigned
         var existing = await _db.SubjectRoles
@@ -259,11 +259,17 @@ public class SubjectsController : ControllerBase
     [HttpDelete("{id:guid}/roles/{roleCode}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> RevokeRole(Guid id, string roleCode, [FromQuery] string? resourceInstanceId, CancellationToken ct)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RevokeRole(
+        Guid id,
+        string roleCode,
+        [FromQuery] string? resourceInstanceId,
+        [FromQuery] string? applicationCode,
+        CancellationToken ct)
     {
-        var role = await _db.Roles.FirstOrDefaultAsync(r => r.Code == roleCode, ct);
+        var (role, roleError) = await ResolveRoleAsync(roleCode, applicationCode, ct);
         if (role == null)
-            return NotFound($"Role '{roleCode}' not found");
+            return roleError!;
 
         var subjectRole = await _db.SubjectRoles
             .FirstOrDefaultAsync(sr =>
@@ -280,6 +286,47 @@ public class SubjectsController : ControllerBase
         _logger.LogInformation("Revoked role {RoleCode} from subject {SubjectId}", roleCode, id);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Resolves a role by code, scoped to an application when
+    /// <paramref name="applicationCode"/> is provided. Role codes are NOT
+    /// globally unique — the same code (e.g. "admin") exists once per
+    /// application — so a code-only lookup is only honoured when it is
+    /// unambiguous. An ambiguous code without an application scope is a
+    /// 400, never a silent pick of an arbitrary application's role.
+    /// </summary>
+    private async Task<(Role? Role, IActionResult? Error)> ResolveRoleAsync(
+        string roleCode, string? applicationCode, CancellationToken ct)
+    {
+        var candidates = await _db.Roles
+            .Include(r => r.Application)
+            .Where(r => r.Code == roleCode)
+            .ToListAsync(ct);
+
+        if (!string.IsNullOrEmpty(applicationCode))
+        {
+            var scoped = candidates
+                .FirstOrDefault(r => r.Application != null && r.Application.Code == applicationCode);
+            if (scoped == null)
+                return (null, NotFound($"Role '{roleCode}' not found in application '{applicationCode}'"));
+            return (scoped, null);
+        }
+
+        if (candidates.Count == 0)
+            return (null, NotFound($"Role '{roleCode}' not found"));
+
+        if (candidates.Count > 1)
+        {
+            var apps = candidates
+                .Select(r => r.Application?.Code ?? "(global)")
+                .OrderBy(c => c, StringComparer.Ordinal);
+            return (null, BadRequest(
+                $"Role code '{roleCode}' is ambiguous across applications: {string.Join(", ", apps)}. " +
+                "Specify applicationCode to select the intended role."));
+        }
+
+        return (candidates[0], null);
     }
 
     private static SubjectDto MapToDto(Subject s) => new()
@@ -362,7 +409,11 @@ public record UpdateSubjectRequest(
     bool? IsActive = null,
     Dictionary<string, object>? Metadata = null);
 
-public record SubjectAssignRoleRequest(string RoleCode, string? ResourceInstanceId = null, DateTimeOffset? ExpiresAt = null);
+public record SubjectAssignRoleRequest(
+    string RoleCode,
+    string? ResourceInstanceId = null,
+    DateTimeOffset? ExpiresAt = null,
+    string? ApplicationCode = null);
 
 public record PagedResult<T>
 {

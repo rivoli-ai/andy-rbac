@@ -10,8 +10,8 @@ public interface IRoleService
     Task<RoleDetailResult?> GetByCodeAsync(string code, string? applicationCode = null, CancellationToken ct = default);
     Task<RoleDetailResult> CreateAsync(CreateRoleRequest request, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
-    Task<string> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, CancellationToken ct = default);
-    Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, CancellationToken ct = default);
+    Task<string> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
+    Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
     Task<string> AssignToTeamAsync(string teamCode, string roleCode, CancellationToken ct = default);
 }
 
