@@ -1,4 +1,5 @@
 using Andy.Rbac.Api.Services;
+using Andy.Rbac.Api.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -64,6 +65,7 @@ public class RolesController : ControllerBase
     /// Creates a new role.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(RoleDetail), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleRequest request, CancellationToken ct)
@@ -83,6 +85,7 @@ public class RolesController : ControllerBase
     /// Deletes a role.
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -106,15 +109,17 @@ public class RolesController : ControllerBase
     /// Assigns a role to a user.
     /// </summary>
     [HttpPost("assign")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     public async Task<IActionResult> AssignRole([FromBody] AssignRoleRequest request, CancellationToken ct)
     {
-        var result = await _roleService.AssignToSubjectAsync(
-            request.SubjectExternalId,
-            request.RoleCode,
-            request.ResourceInstanceId,
-            request.ApplicationCode,
-            ct);
+        var result = string.IsNullOrWhiteSpace(request.SubjectProvider)
+            ? await _roleService.AssignToSubjectWithExpiryAsync(
+                request.SubjectExternalId, request.RoleCode, request.ResourceInstanceId,
+                request.ApplicationCode, request.ExpiresAt, ct)
+            : await _roleService.AssignToSubjectForProviderWithExpiryAsync(
+                request.SubjectExternalId, request.SubjectProvider, request.RoleCode,
+                request.ResourceInstanceId, request.ApplicationCode, request.ExpiresAt, ct);
 
         if (result.StartsWith("Error:"))
             return BadRequest(result);
@@ -126,15 +131,17 @@ public class RolesController : ControllerBase
     /// Revokes a role from a user.
     /// </summary>
     [HttpPost("revoke")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
     public async Task<IActionResult> RevokeRole([FromBody] AssignRoleRequest request, CancellationToken ct)
     {
-        var result = await _roleService.RevokeFromSubjectAsync(
-            request.SubjectExternalId,
-            request.RoleCode,
-            request.ResourceInstanceId,
-            request.ApplicationCode,
-            ct);
+        var result = string.IsNullOrWhiteSpace(request.SubjectProvider)
+            ? await _roleService.RevokeFromSubjectAsync(
+                request.SubjectExternalId, request.RoleCode, request.ResourceInstanceId,
+                request.ApplicationCode, ct)
+            : await _roleService.RevokeFromSubjectForProviderAsync(
+                request.SubjectExternalId, request.SubjectProvider, request.RoleCode,
+                request.ResourceInstanceId, request.ApplicationCode, ct);
 
         if (result.StartsWith("Error:"))
             return BadRequest(result);
@@ -147,4 +154,6 @@ public record AssignRoleRequest(
     string SubjectExternalId,
     string RoleCode,
     string? ResourceInstanceId = null,
-    string? ApplicationCode = null);
+    string? ApplicationCode = null,
+    DateTimeOffset? ExpiresAt = null,
+    string? SubjectProvider = null);

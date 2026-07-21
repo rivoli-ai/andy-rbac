@@ -419,6 +419,7 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.PayloadJson).IsRequired();
             entity.Property(e => e.LastError).HasMaxLength(2000);
             entity.HasIndex(e => e.CorrelationId);
+            entity.HasIndex(e => new { e.PublishedAt, e.DeadLetteredAt, e.NextAttemptAt });
 
             // SQLite cannot ORDER BY DateTimeOffset — the dispatcher's
             // `OrderBy(e => e.CreatedAt)` hot path used to throw

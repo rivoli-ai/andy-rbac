@@ -20,11 +20,27 @@ public interface IPermissionEvaluator
         string? resourceInstanceId = null,
         CancellationToken ct = default);
 
+    Task<PermissionCheckResult> CheckPermissionForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        string permission,
+        IEnumerable<string>? groups = null,
+        string? resourceInstanceId = null,
+        CancellationToken ct = default);
+
     /// <summary>
     /// Checks if a subject has any of the specified permissions.
     /// </summary>
     Task<PermissionCheckResult> CheckAnyPermissionAsync(
         string subjectExternalId,
+        IEnumerable<string> permissions,
+        IEnumerable<string>? groups = null,
+        string? resourceInstanceId = null,
+        CancellationToken ct = default);
+
+    Task<PermissionCheckResult> CheckAnyPermissionForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
         IEnumerable<string> permissions,
         IEnumerable<string>? groups = null,
         string? resourceInstanceId = null,
@@ -39,11 +55,25 @@ public interface IPermissionEvaluator
         string? applicationCode = null,
         CancellationToken ct = default);
 
+    Task<IReadOnlyList<string>> GetPermissionsForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        IEnumerable<string>? groups = null,
+        string? applicationCode = null,
+        CancellationToken ct = default);
+
     /// <summary>
     /// Gets all roles for a subject.
     /// </summary>
     Task<IReadOnlyList<string>> GetRolesAsync(
         string subjectExternalId,
+        IEnumerable<string>? groups = null,
+        string? applicationCode = null,
+        CancellationToken ct = default);
+
+    Task<IReadOnlyList<string>> GetRolesForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
         IEnumerable<string>? groups = null,
         string? applicationCode = null,
         CancellationToken ct = default);

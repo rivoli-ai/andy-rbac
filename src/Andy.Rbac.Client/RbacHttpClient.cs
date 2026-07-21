@@ -225,8 +225,15 @@ public class RbacHttpClient : IRbacClient
         DateTimeOffset? expiresAt = null,
         CancellationToken ct = default)
     {
-        var request = new { SubjectId = subjectId, RoleCode = roleCode, ResourceInstanceId = resourceInstanceId, ExpiresAt = expiresAt };
-        var response = await _httpClient.PostAsJsonAsync("api/subjects/roles", request, ct);
+        var request = new
+        {
+            SubjectExternalId = subjectId,
+            RoleCode = roleCode,
+            ResourceInstanceId = resourceInstanceId,
+            ApplicationCode = _options.ApplicationCode,
+            ExpiresAt = expiresAt
+        };
+        var response = await _httpClient.PostAsJsonAsync("api/roles/assign", request, ct);
         response.EnsureSuccessStatusCode();
 
         // Invalidate cache
@@ -239,11 +246,14 @@ public class RbacHttpClient : IRbacClient
         string? resourceInstanceId = null,
         CancellationToken ct = default)
     {
-        var url = $"api/subjects/{Uri.EscapeDataString(subjectId)}/roles/{Uri.EscapeDataString(roleCode)}";
-        if (!string.IsNullOrEmpty(resourceInstanceId))
-            url += $"?resourceInstanceId={Uri.EscapeDataString(resourceInstanceId)}";
-
-        var response = await _httpClient.DeleteAsync(url, ct);
+        var request = new
+        {
+            SubjectExternalId = subjectId,
+            RoleCode = roleCode,
+            ResourceInstanceId = resourceInstanceId,
+            ApplicationCode = _options.ApplicationCode
+        };
+        var response = await _httpClient.PostAsJsonAsync("api/roles/revoke", request, ct);
         response.EnsureSuccessStatusCode();
 
         // Invalidate cache
@@ -258,7 +268,7 @@ public class RbacHttpClient : IRbacClient
         DateTimeOffset? expiresAt = null,
         CancellationToken ct = default)
     {
-        var request = new { SubjectId = subjectId, ResourceTypeCode = resourceTypeCode, ResourceInstanceId = resourceInstanceId, Action = action, ExpiresAt = expiresAt };
+        var request = new { ApplicationCode = _options.ApplicationCode, SubjectId = subjectId, ResourceTypeCode = resourceTypeCode, ResourceInstanceId = resourceInstanceId, Action = action, ExpiresAt = expiresAt };
         var response = await _httpClient.PostAsJsonAsync("api/instances/permissions", request, ct);
         response.EnsureSuccessStatusCode();
 
@@ -272,7 +282,7 @@ public class RbacHttpClient : IRbacClient
         string action,
         CancellationToken ct = default)
     {
-        var url = $"api/instances/{Uri.EscapeDataString(resourceTypeCode)}/{Uri.EscapeDataString(resourceInstanceId)}/permissions/{Uri.EscapeDataString(subjectId)}/{Uri.EscapeDataString(action)}";
+        var url = $"api/instances/{Uri.EscapeDataString(resourceTypeCode)}/{Uri.EscapeDataString(resourceInstanceId)}/permissions/{Uri.EscapeDataString(subjectId)}/{Uri.EscapeDataString(action)}?applicationCode={Uri.EscapeDataString(_options.ApplicationCode)}";
         var response = await _httpClient.DeleteAsync(url, ct);
         response.EnsureSuccessStatusCode();
 
@@ -287,7 +297,7 @@ public class RbacHttpClient : IRbacClient
         Dictionary<string, object>? metadata = null,
         CancellationToken ct = default)
     {
-        var request = new { ResourceTypeCode = resourceTypeCode, ResourceInstanceId = resourceInstanceId, OwnerSubjectId = ownerSubjectId, DisplayName = displayName, Metadata = metadata };
+        var request = new { ApplicationCode = _options.ApplicationCode, ResourceTypeCode = resourceTypeCode, ResourceInstanceId = resourceInstanceId, OwnerSubjectId = ownerSubjectId, DisplayName = displayName, Metadata = metadata };
         var response = await _httpClient.PostAsJsonAsync("api/instances", request, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -297,7 +307,7 @@ public class RbacHttpClient : IRbacClient
         string resourceInstanceId,
         CancellationToken ct = default)
     {
-        var url = $"api/instances/{Uri.EscapeDataString(resourceTypeCode)}/{Uri.EscapeDataString(resourceInstanceId)}";
+        var url = $"api/instances/{Uri.EscapeDataString(resourceTypeCode)}/{Uri.EscapeDataString(resourceInstanceId)}?applicationCode={Uri.EscapeDataString(_options.ApplicationCode)}";
         var response = await _httpClient.DeleteAsync(url, ct);
         response.EnsureSuccessStatusCode();
     }

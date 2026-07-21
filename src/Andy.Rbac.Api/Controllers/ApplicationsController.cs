@@ -1,4 +1,5 @@
 using Andy.Rbac.Api.Services;
+using Andy.Rbac.Api.Authorization;
 using Andy.Rbac.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -68,6 +69,7 @@ public class ApplicationsController : ControllerBase
     /// Creates a new application.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(ApplicationDetail), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateApplication([FromBody] CreateApplicationRequest request, CancellationToken ct)
@@ -87,6 +89,7 @@ public class ApplicationsController : ControllerBase
     /// Updates an application.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(ApplicationDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateApplication(Guid id, [FromBody] UpdateApplicationRequest request, CancellationToken ct)
@@ -102,6 +105,7 @@ public class ApplicationsController : ControllerBase
     /// Deletes an application and all associated data.
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteApplication(Guid id, CancellationToken ct)
@@ -117,6 +121,7 @@ public class ApplicationsController : ControllerBase
     /// Adds a resource type to an application.
     /// </summary>
     [HttpPost("{id:guid}/resource-types")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(ResourceTypeSummary), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -145,11 +150,8 @@ public class ApplicationsController : ControllerBase
     /// roles scoped to this application only (not their global role
     /// list).
     ///
-    /// Auth: <c>[Authorize]</c> at class level (JWT bearer). The
-    /// per-permission gate (<c>rbac:applications:{app}:users:read</c>
-    /// per the spec) lands with the broader rbac authorization
-    /// hardening (#45/#48/#51 security audit). Document the gap;
-    /// rbac's other admin endpoints follow the same pattern today.
+    /// Auth: authenticated read access at class level; all management
+    /// mutations in this controller require the RBAC administrator policy.
     /// </summary>
     [HttpGet("by-code/{code}/users")]
     [ProducesResponseType(typeof(PagedResult<ApplicationUserDto>), StatusCodes.Status200OK)]

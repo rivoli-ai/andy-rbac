@@ -214,6 +214,28 @@ public class RoleServiceTests
     }
 
     [Fact]
+    public async Task AssignToSubjectWithExpiryAsync_ExpiredAssignment_RenewsExistingRow()
+    {
+        using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
+        var service = new RoleService(context, _loggerMock.Object,
+            new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
+        var assignment = context.SubjectRoles.Single(value =>
+            value.SubjectId == Guid.Parse("66666666-6666-6666-6666-666666666668") &&
+            value.RoleId == Guid.Parse("55555555-5555-5555-5555-555555555557"));
+        assignment.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await context.SaveChangesAsync();
+        var renewedUntil = DateTimeOffset.UtcNow.AddHours(1);
+
+        var result = await service.AssignToSubjectWithExpiryAsync(
+            "viewer-user", "viewer", null, "test-app", renewedUntil);
+
+        result.Should().Contain("Successfully assigned");
+        context.SubjectRoles.Count(value => value.SubjectId == assignment.SubjectId &&
+            value.RoleId == assignment.RoleId).Should().Be(1);
+        assignment.ExpiresAt.Should().Be(renewedUntil);
+    }
+
+    [Fact]
     public async Task AssignToSubjectAsync_WithInvalidSubject_ReturnsError()
     {
         // Arrange

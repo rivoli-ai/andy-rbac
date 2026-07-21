@@ -47,5 +47,7 @@ public class OutboxEntry
     // to surface poison messages.
     public int AttemptCount { get; set; }
     public DateTimeOffset? LastAttemptAt { get; set; }
+    public DateTimeOffset? NextAttemptAt { get; set; }
+    public DateTimeOffset? DeadLetteredAt { get; set; }
     public string? LastError { get; set; }
 }

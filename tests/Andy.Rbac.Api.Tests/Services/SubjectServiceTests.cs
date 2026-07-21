@@ -261,6 +261,42 @@ public class SubjectServiceTests
     }
 
     [Fact]
+    public async Task UpsertAsync_SameExternalIdInDifferentProvider_CreatesQualifiedSubject()
+    {
+        using var context = TestDbContextFactory.Create();
+        context.Subjects.Add(new Andy.Rbac.Models.Subject
+        {
+            Id = Guid.NewGuid(), ExternalId = "shared-id", Provider = "provider-b"
+        });
+        await context.SaveChangesAsync();
+        var service = new SubjectService(context, _loggerMock.Object);
+
+        var result = await service.UpsertAsync(
+            "shared-id", "provider-a", "a@example.com", "Provider A");
+
+        result.Subject.Provider.Should().Be("provider-a");
+        context.Subjects.Count(subject => subject.ExternalId == "shared-id").Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_ExistingQualifiedSubject_UpdatesProvisionedFields()
+    {
+        using var context = await TestDbContextFactory.CreateWithSeedDataAsync();
+        var service = new SubjectService(context, _loggerMock.Object);
+
+        var result = await service.UpsertAsync(
+            "admin-user", "test-provider", "new@example.com", "New Name",
+            new Dictionary<string, object> { ["department"] = "engineering" });
+
+        result.Subject.Email.Should().Be("new@example.com");
+        result.Subject.DisplayName.Should().Be("New Name");
+        var stored = context.Subjects.Single(subject =>
+            subject.ExternalId == "admin-user" && subject.Provider == "test-provider");
+        stored.Metadata.Should().ContainKey("department");
+        stored.LastSeenAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task GetByIdAsync_IncludesTeamMemberships()
     {
         // Arrange

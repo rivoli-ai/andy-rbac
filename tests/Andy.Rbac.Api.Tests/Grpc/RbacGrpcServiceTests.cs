@@ -10,6 +10,7 @@ using CheckPermissionReq = Andy.Rbac.Grpc.CheckPermissionRequest;
 using CheckAnyPermissionReq = Andy.Rbac.Grpc.CheckAnyPermissionRequest;
 using GetPermissionsReq = Andy.Rbac.Grpc.GetPermissionsRequest;
 using GetRolesReq = Andy.Rbac.Grpc.GetRolesRequest;
+using ProvisionSubjectReq = Andy.Rbac.Grpc.ProvisionSubjectRequest;
 
 namespace Andy.Rbac.Api.Tests.Grpc;
 
@@ -302,6 +303,36 @@ public class RbacGrpcServiceTests
 
         // Assert
         response.Roles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ProvisionSubject_UsesProviderQualifiedUpsertAndUpdatesFields()
+    {
+        var subjects = new Mock<ISubjectService>();
+        subjects.Setup(service => service.UpsertAsync(
+                "shared-id", "provider-a", "new@example.com", "New Name",
+                It.Is<Dictionary<string, object>>(metadata =>
+                    Equals(metadata["department"], "engineering")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SubjectDetailResult(new SubjectDetail(
+                Guid.NewGuid(), "shared-id", "provider-a", "new@example.com", "New Name",
+                true, DateTimeOffset.UtcNow, [], [])));
+        var service = new RbacGrpcService(
+            _evaluatorMock.Object, _loggerMock.Object, subjectService: subjects.Object);
+        var request = new ProvisionSubjectReq
+        {
+            ExternalId = "shared-id",
+            Provider = "provider-a",
+            Email = "new@example.com",
+            DisplayName = "New Name"
+        };
+        request.Metadata.Add("department", "engineering");
+
+        var response = await service.ProvisionSubject(request, CreateServerCallContext());
+
+        response.Provider.Should().Be("provider-a");
+        response.Email.Should().Be("new@example.com");
+        subjects.VerifyAll();
     }
 
     private static ServerCallContext CreateServerCallContext()

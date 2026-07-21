@@ -21,6 +21,34 @@ public class PermissionEvaluatorTests
     }
 
     [Fact]
+    public async Task DuplicateExternalIdAcrossProviders_RequiresProviderAndResolvesExactly()
+    {
+        using var context = TestDbContextFactory.Create();
+        var first = new Andy.Rbac.Models.Subject
+        {
+            Id = Guid.NewGuid(), ExternalId = "shared-id", Provider = "provider-a"
+        };
+        var second = new Andy.Rbac.Models.Subject
+        {
+            Id = Guid.NewGuid(), ExternalId = "shared-id", Provider = "provider-b"
+        };
+        context.Subjects.AddRange(first, second);
+        await context.SaveChangesAsync();
+        _permissionRepoMock.Setup(repo => repo.HasPermissionAsync(
+                second.Id, "app:resource:read", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var evaluator = new PermissionEvaluator(context, _permissionRepoMock.Object, _loggerMock.Object);
+
+        var ambiguous = await evaluator.CheckPermissionAsync("shared-id", "app:resource:read");
+        var qualified = await evaluator.CheckPermissionForProviderAsync(
+            "shared-id", "provider-b", "app:resource:read");
+
+        ambiguous.Allowed.Should().BeFalse();
+        ambiguous.Reason.Should().Contain("provider");
+        qualified.Allowed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task CheckPermissionAsync_WithNonExistentSubject_ReturnsDenied()
     {
         // Arrange

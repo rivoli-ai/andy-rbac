@@ -37,7 +37,9 @@ public class EnsureSubjectMiddleware
 
             if (!string.IsNullOrEmpty(sub) && !string.IsNullOrEmpty(email))
             {
-                var existing = await db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == sub);
+                const string provider = "andy-auth";
+                var existing = await db.Subjects.FirstOrDefaultAsync(
+                    s => s.Provider == provider && s.ExternalId == sub);
                 if (existing is null)
                 {
                     var name = context.User.FindFirst("name")?.Value
@@ -46,7 +48,7 @@ public class EnsureSubjectMiddleware
                     db.Subjects.Add(new Subject
                     {
                         ExternalId = sub,
-                        Provider = "andy-auth",
+                        Provider = provider,
                         Type = SubjectType.User,
                         Email = email,
                         DisplayName = name,

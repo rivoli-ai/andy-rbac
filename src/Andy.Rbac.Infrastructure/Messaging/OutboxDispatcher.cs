@@ -21,22 +21,17 @@ namespace Andy.Rbac.Infrastructure.Messaging;
 //
 // Retry semantics: on publish failure the row stays pending with
 // AttemptCount incremented and LastError set. The dispatcher respects
-// an exponential-backoff delay between retries based on AttemptCount
-// so a poison message does not spin the worker at full speed. After
-// MaxAttempts the row is marked as dead and logged; operator action
-// required. (MaxAttempts is not yet enforced in this stub — noted as
-// a follow-up.)
-//
-// This is currently a scaffold. The core drain loop is wired but
-// PublishAsync delegates to NatsMessageBus which is itself a stub —
-// so the worker will log and throw. The Program.cs wiring lands in
-// a follow-up commit along with the real NATS client.
+// exponential backoff and dead-letters rows after MaxAttempts so a
+// poison message cannot spin the worker indefinitely.
 public sealed class OutboxDispatcher : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxDispatcher> _logger;
     private readonly TimeSpan _pollInterval;
     private readonly int _batchSize;
+    private readonly int _maxAttempts;
+    private readonly TimeSpan _initialRetryDelay;
+    private readonly TimeSpan _maxRetryDelay;
 
     public OutboxDispatcher(
         IServiceScopeFactory scopeFactory,
@@ -47,6 +42,14 @@ public sealed class OutboxDispatcher : BackgroundService
         _logger = logger;
         _pollInterval = options.Value.PollInterval;
         _batchSize = options.Value.BatchSize;
+        _maxAttempts = options.Value.MaxAttempts;
+        _initialRetryDelay = options.Value.InitialRetryDelay;
+        _maxRetryDelay = options.Value.MaxRetryDelay;
+
+        if (_batchSize <= 0) throw new ArgumentOutOfRangeException(nameof(options), "BatchSize must be positive");
+        if (_maxAttempts <= 0) throw new ArgumentOutOfRangeException(nameof(options), "MaxAttempts must be positive");
+        if (_initialRetryDelay <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(options), "InitialRetryDelay must be positive");
+        if (_maxRetryDelay < _initialRetryDelay) throw new ArgumentOutOfRangeException(nameof(options), "MaxRetryDelay must not be shorter than InitialRetryDelay");
 
         // AK2: ADR-0001 op invariant — PollInterval ≤ 2s across services.
         if (_pollInterval > OutboxDispatcherOptions.MaxRecommendedPollInterval)
@@ -92,8 +95,10 @@ public sealed class OutboxDispatcher : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<RbacDbContext>();
         var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
 
+        var now = DateTimeOffset.UtcNow;
         var pending = await db.Set<OutboxEntry>()
-            .Where(e => e.PublishedAt == null)
+            .Where(e => e.PublishedAt == null && e.DeadLetteredAt == null)
+            .Where(e => e.NextAttemptAt == null || e.NextAttemptAt <= now)
             .OrderBy(e => e.CreatedAt)
             .Take(_batchSize)
             .ToListAsync(ct);
@@ -122,6 +127,7 @@ public sealed class OutboxDispatcher : BackgroundService
                 await bus.PublishAsync(entry.Subject, doc.RootElement, headers, ct);
 
                 entry.PublishedAt = DateTimeOffset.UtcNow;
+                entry.NextAttemptAt = null;
                 entry.LastError = null;
             }
             catch (Exception ex)
@@ -129,9 +135,25 @@ public sealed class OutboxDispatcher : BackgroundService
                 entry.AttemptCount++;
                 entry.LastAttemptAt = DateTimeOffset.UtcNow;
                 entry.LastError = ex.Message;
-                _logger.LogWarning(ex,
-                    "Outbox entry {EntryId} publish failed (attempt {Attempt})",
-                    entry.Id, entry.AttemptCount);
+                if (entry.AttemptCount >= _maxAttempts)
+                {
+                    entry.DeadLetteredAt = entry.LastAttemptAt;
+                    entry.NextAttemptAt = null;
+                    _logger.LogError(ex,
+                        "Outbox entry {EntryId} exhausted {AttemptCount} attempts and was dead-lettered",
+                        entry.Id, entry.AttemptCount);
+                }
+                else
+                {
+                    var exponent = Math.Min(entry.AttemptCount - 1, 30);
+                    var delayTicks = Math.Min(
+                        _initialRetryDelay.Ticks * Math.Pow(2, exponent),
+                        _maxRetryDelay.Ticks);
+                    entry.NextAttemptAt = entry.LastAttemptAt.Value.AddTicks((long)delayTicks);
+                    _logger.LogWarning(ex,
+                        "Outbox entry {EntryId} publish failed (attempt {Attempt}); next attempt at {NextAttemptAt}",
+                        entry.Id, entry.AttemptCount, entry.NextAttemptAt);
+                }
             }
         }
 

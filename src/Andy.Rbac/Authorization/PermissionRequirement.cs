@@ -9,11 +9,19 @@ public class PermissionRequirement : IAuthorizationRequirement
 {
     public string Permission { get; }
     public string? ResourceIdParameter { get; }
+    public bool ResourceIdFromBody { get; }
+    public string? ResourceIdBodyPath { get; }
 
-    public PermissionRequirement(string permission, string? resourceIdParameter = null)
+    public PermissionRequirement(
+        string permission,
+        string? resourceIdParameter = null,
+        bool resourceIdFromBody = false,
+        string? resourceIdBodyPath = null)
     {
         Permission = permission;
         ResourceIdParameter = resourceIdParameter;
+        ResourceIdFromBody = resourceIdFromBody;
+        ResourceIdBodyPath = resourceIdBodyPath;
     }
 }
 

@@ -106,9 +106,15 @@ public class RoleService : IRoleService
         Guid? parentRoleId = null;
         if (!string.IsNullOrEmpty(request.ParentRoleCode))
         {
-            var parent = await _db.Roles.FirstOrDefaultAsync(r => r.Code == request.ParentRoleCode, ct);
+            // Role codes are unique only inside an application. A child may
+            // inherit only from a role in the same scope (global-to-global or
+            // application-to-same-application), otherwise a common code such
+            // as "admin" can leak permissions across applications.
+            var parent = await _db.Roles.FirstOrDefaultAsync(
+                r => r.Code == request.ParentRoleCode && r.ApplicationId == applicationId, ct);
             if (parent == null)
-                throw new InvalidOperationException($"Parent role '{request.ParentRoleCode}' not found");
+                throw new InvalidOperationException(
+                    $"Parent role '{request.ParentRoleCode}' not found in application scope '{request.ApplicationCode ?? "(global)"}'");
             parentRoleId = parent.Id;
 
             // Defense-in-depth (issue #46): walk the proposed parent chain to
@@ -213,8 +219,43 @@ public class RoleService : IRoleService
     }
 
     public async Task<string> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default)
+        => await AssignToSubjectWithExpiryAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode, expiresAt: null, ct);
+
+    public async Task<string> AssignToSubjectWithExpiryAsync(
+        string subjectExternalId,
+        string roleCode,
+        string? resourceInstanceId,
+        string? applicationCode,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default)
+        => await AssignToSubjectCoreAsync(
+            subjectExternalId, subjectProvider: null, roleCode, resourceInstanceId, applicationCode, expiresAt, ct);
+
+    public async Task<string> AssignToSubjectForProviderWithExpiryAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        string roleCode,
+        string? resourceInstanceId,
+        string? applicationCode,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default)
+        => await AssignToSubjectCoreAsync(
+            subjectExternalId, subjectProvider, roleCode, resourceInstanceId, applicationCode, expiresAt, ct);
+
+    private async Task<string> AssignToSubjectCoreAsync(
+        string subjectExternalId,
+        string? subjectProvider,
+        string roleCode,
+        string? resourceInstanceId,
+        string? applicationCode,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct)
     {
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        var subjectResolution = await SubjectResolver.ResolveAsync(
+            _db, subjectExternalId, subjectProvider, tracking: true, ct);
+        if (subjectResolution.IsAmbiguous)
+            return $"Error: Subject '{subjectExternalId}' is ambiguous; use the provider-aware subject endpoint";
+        var subject = subjectResolution.Subject;
         if (subject == null)
             return $"Error: Subject '{subjectExternalId}' not found";
 
@@ -222,20 +263,24 @@ public class RoleService : IRoleService
         if (role == null)
             return roleError!;
 
-        var existing = await _db.SubjectRoles
-            .AnyAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id && sr.ResourceInstanceId == resourceInstanceId, ct);
-
-        if (existing)
+        var existing = await _db.SubjectRoles.FirstOrDefaultAsync(
+            sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id &&
+                sr.ResourceInstanceId == resourceInstanceId, ct);
+        var now = DateTimeOffset.UtcNow;
+        if (existing is not null && (existing.ExpiresAt is null || existing.ExpiresAt > now))
             return $"Role '{roleCode}' is already assigned to user";
 
-        var assignment = new SubjectRole
+        var assignment = existing ?? new SubjectRole
         {
             Id = Guid.NewGuid(),
             SubjectId = subject.Id,
             RoleId = role.Id,
             ResourceInstanceId = resourceInstanceId
         };
-        _db.SubjectRoles.Add(assignment);
+        assignment.ExpiresAt = expiresAt;
+        assignment.GrantedAt = now;
+        if (existing is null)
+            _db.SubjectRoles.Add(assignment);
         _events.RoleAssigned(new RoleAssigned(
             AssignmentId: assignment.Id,
             SubjectId: subject.Id,
@@ -253,8 +298,25 @@ public class RoleService : IRoleService
     }
 
     public async Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default)
+        => await RevokeFromSubjectCoreAsync(
+            subjectExternalId, subjectProvider: null, roleCode, resourceInstanceId, applicationCode, ct);
+
+    public async Task<string> RevokeFromSubjectForProviderAsync(
+        string subjectExternalId, string subjectProvider, string roleCode,
+        string? resourceInstanceId = null, string? applicationCode = null,
+        CancellationToken ct = default)
+        => await RevokeFromSubjectCoreAsync(
+            subjectExternalId, subjectProvider, roleCode, resourceInstanceId, applicationCode, ct);
+
+    private async Task<string> RevokeFromSubjectCoreAsync(
+        string subjectExternalId, string? subjectProvider, string roleCode,
+        string? resourceInstanceId, string? applicationCode, CancellationToken ct)
     {
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        var subjectResolution = await SubjectResolver.ResolveAsync(
+            _db, subjectExternalId, subjectProvider, tracking: true, ct);
+        if (subjectResolution.IsAmbiguous)
+            return $"Error: Subject '{subjectExternalId}' is ambiguous; use the provider-aware subject endpoint";
+        var subject = subjectResolution.Subject;
         if (subject == null)
             return $"Error: Subject '{subjectExternalId}' not found";
 

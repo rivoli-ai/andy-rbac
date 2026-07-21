@@ -39,6 +39,7 @@ message CheckPermissionRequest {
   string subject_id = 1;
   string permission = 2;  // Format: "app:resource:action"
   optional string resource_instance_id = 3;
+  optional string subject_provider = 4;
 }
 
 // Check any permission request
@@ -46,6 +47,7 @@ message CheckAnyPermissionRequest {
   string subject_id = 1;
   repeated string permissions = 2;
   optional string resource_instance_id = 3;
+  optional string subject_provider = 4;
 }
 
 // Permission check response
@@ -58,6 +60,7 @@ message CheckPermissionResponse {
 message GetPermissionsRequest {
   string subject_id = 1;
   optional string application_code = 2;
+  optional string subject_provider = 3;
 }
 
 // Get permissions response
@@ -69,6 +72,7 @@ message GetPermissionsResponse {
 message GetRolesRequest {
   string subject_id = 1;
   optional string application_code = 2;
+  optional string subject_provider = 3;
 }
 
 // Get roles response
@@ -101,6 +105,8 @@ message AssignRoleRequest {
   string role_code = 2;
   optional string resource_instance_id = 3;
   optional int64 expires_at_unix = 4;  // Unix timestamp
+  optional string application_code = 5;
+  optional string subject_provider = 6;
 }
 
 // Assign role response
@@ -114,6 +120,8 @@ message RevokeRoleRequest {
   string subject_id = 1;
   string role_code = 2;
   optional string resource_instance_id = 3;
+  optional string application_code = 4;
+  optional string subject_provider = 5;
 }
 
 // Revoke role response
@@ -129,6 +137,8 @@ message GrantInstancePermissionRequest {
   string resource_instance_id = 3;
   string action = 4;
   optional int64 expires_at_unix = 5;
+  string application_code = 6;
+  optional string subject_provider = 7;
 }
 
 // Grant instance permission response
@@ -143,6 +153,8 @@ message RevokeInstancePermissionRequest {
   string resource_type_code = 2;
   string resource_instance_id = 3;
   string action = 4;
+  string application_code = 5;
+  optional string subject_provider = 6;
 }
 
 // Revoke instance permission response

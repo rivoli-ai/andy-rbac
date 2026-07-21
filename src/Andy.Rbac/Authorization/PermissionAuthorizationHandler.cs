@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace Andy.Rbac.Authorization;
 
@@ -44,7 +45,10 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
         }
 
         var permission = NormalizePermission(requirement.Permission);
-        var resourceInstanceId = GetResourceInstanceId(requirement.ResourceIdParameter);
+        var resourceInstanceId = requirement.ResourceIdFromBody
+            ? await GetResourceInstanceIdFromBodyAsync(
+                requirement.ResourceIdBodyPath ?? requirement.ResourceIdParameter)
+            : GetResourceInstanceId(requirement.ResourceIdParameter);
         var groups = GetGroupsFromClaims();
 
         var hasPermission = await _permissionService.HasPermissionAsync(
@@ -110,6 +114,50 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
         }
 
         return null;
+    }
+
+    private async Task<string?> GetResourceInstanceIdFromBodyAsync(string? propertyPath)
+    {
+        if (string.IsNullOrWhiteSpace(propertyPath))
+            return null;
+
+        var request = _httpContextAccessor.HttpContext?.Request;
+        if (request is null || request.Body is null)
+            return null;
+
+        request.EnableBuffering();
+        try
+        {
+            request.Body.Position = 0;
+            using var document = await JsonDocument.ParseAsync(request.Body);
+            var current = document.RootElement;
+            foreach (var segment in propertyPath.Split('.', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (current.ValueKind != JsonValueKind.Object)
+                    return null;
+
+                if (current.TryGetProperty(segment, out var exact))
+                {
+                    current = exact;
+                    continue;
+                }
+
+                var match = current.EnumerateObject().FirstOrDefault(property =>
+                    property.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+                if (match.Name is null) return null;
+                current = match.Value;
+            }
+
+            return current.ValueKind == JsonValueKind.String ? current.GetString() : current.ToString();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        finally
+        {
+            request.Body.Position = 0;
+        }
     }
 }
 
