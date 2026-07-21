@@ -378,6 +378,15 @@ using (var scope = app.Services.CreateScope())
         if (dbProvider == DatabaseProvider.Sqlite)
         {
             await db.Database.EnsureCreatedAsync();
+
+            // EnsureCreated is a no-op on an existing DB, so a database
+            // created by an older binary never picks up new model
+            // columns/tables (e.g. outbox.DeadLetteredAt from
+            // AddOutboxRetryState — every existing embedded install
+            // crashed with `no such column: o.DeadLetteredAt`). Heal
+            // additive drift by comparing the live model to the actual
+            // SQLite schema.
+            await SqliteSchemaBootstrapper.HealAsync(db, app.Logger);
         }
         else
         {
