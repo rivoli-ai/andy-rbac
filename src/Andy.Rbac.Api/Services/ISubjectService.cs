@@ -12,6 +12,7 @@ public interface ISubjectService
     Task<SubjectDetailResult?> UpdateAsync(Guid id, UpdateSubjectRequest request, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
     Task<SubjectDetailResult> GetOrCreateAsync(string externalId, string provider, string? email = null, string? displayName = null, CancellationToken ct = default);
+    Task<SubjectDetailResult> UpsertAsync(string externalId, string provider, string? email = null, string? displayName = null, Dictionary<string, object>? metadata = null, CancellationToken ct = default);
 }
 
 public record SubjectSummary(

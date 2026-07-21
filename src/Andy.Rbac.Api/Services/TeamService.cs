@@ -146,7 +146,11 @@ public class TeamService : ITeamService
         if (team == null)
             return $"Error: Team '{teamCode}' not found";
 
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        var subjectResolution = await SubjectResolver.ResolveAsync(
+            _db, subjectExternalId, provider: null, tracking: true, ct);
+        if (subjectResolution.IsAmbiguous)
+            return $"Error: Subject '{subjectExternalId}' is ambiguous; specify its provider";
+        var subject = subjectResolution.Subject;
         if (subject == null)
             return $"Error: Subject '{subjectExternalId}' not found";
 
@@ -173,7 +177,11 @@ public class TeamService : ITeamService
         if (team == null)
             return $"Error: Team '{teamCode}' not found";
 
-        var subject = await _db.Subjects.FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        var subjectResolution = await SubjectResolver.ResolveAsync(
+            _db, subjectExternalId, provider: null, tracking: true, ct);
+        if (subjectResolution.IsAmbiguous)
+            return $"Error: Subject '{subjectExternalId}' is ambiguous; specify its provider";
+        var subject = subjectResolution.Subject;
         if (subject == null)
             return $"Error: Subject '{subjectExternalId}' not found";
 

@@ -1,4 +1,5 @@
 using Andy.Rbac.Infrastructure.Data;
+using Andy.Rbac.Api.Authorization;
 using Andy.Rbac.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -113,6 +114,7 @@ public class TeamsController : ControllerBase
     /// Creates a new team.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(TeamDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreateTeam([FromBody] CreateTeamRequest request, CancellationToken ct)
@@ -170,6 +172,7 @@ public class TeamsController : ControllerBase
     /// Updates a team.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(TeamDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateTeam(Guid id, [FromBody] UpdateTeamRequest request, CancellationToken ct)
@@ -200,6 +203,7 @@ public class TeamsController : ControllerBase
     /// Adds a member to a team.
     /// </summary>
     [HttpPost("{id:guid}/members")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -236,6 +240,7 @@ public class TeamsController : ControllerBase
     /// Removes a member from a team.
     /// </summary>
     [HttpDelete("{id:guid}/members/{subjectId:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RemoveMember(Guid id, Guid subjectId, CancellationToken ct)
@@ -258,6 +263,7 @@ public class TeamsController : ControllerBase
     /// Assigns a role to a team (all members inherit this role).
     /// </summary>
     [HttpPost("{id:guid}/roles")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -294,6 +300,7 @@ public class TeamsController : ControllerBase
     /// Revokes a role from a team.
     /// </summary>
     [HttpDelete("{id:guid}/roles/{roleCode}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

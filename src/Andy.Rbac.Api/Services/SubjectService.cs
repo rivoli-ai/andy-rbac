@@ -55,8 +55,12 @@ public class SubjectService : ISubjectService
 
     public async Task<SubjectDetailResult?> GetByExternalIdAsync(string externalId, CancellationToken ct = default)
     {
-        var subject = await GetSubjectWithDetails()
-            .FirstOrDefaultAsync(s => s.ExternalId == externalId, ct);
+        var matches = await GetSubjectWithDetails()
+            .Where(s => s.ExternalId == externalId)
+            .Take(2)
+            .ToListAsync(ct);
+
+        var subject = matches.Count == 1 ? matches[0] : null;
 
         return subject == null ? null : await MapToDetailResultAsync(subject, ct);
     }
@@ -139,6 +143,43 @@ public class SubjectService : ISubjectService
             return existing;
 
         return await CreateAsync(new CreateSubjectRequest(externalId, provider, email, displayName), ct);
+    }
+
+    public async Task<SubjectDetailResult> UpsertAsync(
+        string externalId,
+        string provider,
+        string? email = null,
+        string? displayName = null,
+        Dictionary<string, object>? metadata = null,
+        CancellationToken ct = default)
+    {
+        var subject = await _db.Subjects.FirstOrDefaultAsync(
+            value => value.ExternalId == externalId && value.Provider == provider, ct);
+        if (subject is null)
+        {
+            subject = new Subject
+            {
+                Id = Guid.NewGuid(),
+                ExternalId = externalId,
+                Provider = provider,
+                Email = email,
+                DisplayName = displayName,
+                Metadata = metadata
+            };
+            _db.Subjects.Add(subject);
+            _logger.LogInformation("Provisioned subject {ExternalId} from provider {Provider}", externalId, provider);
+        }
+        else
+        {
+            if (email is not null) subject.Email = email;
+            if (displayName is not null) subject.DisplayName = displayName;
+            if (metadata is not null) subject.Metadata = metadata;
+            _logger.LogInformation("Updated provisioned subject {ExternalId} from provider {Provider}", externalId, provider);
+        }
+
+        subject.LastSeenAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+        return (await GetByIdAsync(subject.Id, ct))!;
     }
 
     private IQueryable<Subject> GetSubjectWithDetails()

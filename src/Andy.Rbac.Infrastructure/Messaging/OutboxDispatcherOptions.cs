@@ -24,4 +24,8 @@ public sealed class OutboxDispatcherOptions
     // Max rows per drain. Bounds the transaction size and the
     // failure blast-radius of a poison message.
     public int BatchSize { get; set; } = 100;
+
+    public int MaxAttempts { get; set; } = 10;
+    public TimeSpan InitialRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+    public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromMinutes(1);
 }

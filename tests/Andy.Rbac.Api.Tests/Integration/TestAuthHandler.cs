@@ -29,14 +29,17 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim("sub", TestSub),
             new Claim(ClaimTypes.NameIdentifier, TestSub),
             new Claim("email", TestEmail),
             new Claim(ClaimTypes.Email, TestEmail),
-            new Claim("name", TestName),
+            new Claim("name", TestName)
         };
+        var requestedRole = Request.Headers["X-Test-Role"].FirstOrDefault();
+        if (!string.Equals(requestedRole, "none", StringComparison.OrdinalIgnoreCase))
+            claims.Add(new Claim(ClaimTypes.Role, requestedRole ?? "super-admin"));
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, SchemeName);

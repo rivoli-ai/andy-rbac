@@ -88,6 +88,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: subjectProvider
+          in: query
+          required: false
+          description: Identity provider used to disambiguate duplicate external IDs
+          schema:
+            type: string
       responses:
         '200':
           description: List of permissions
@@ -112,6 +118,12 @@ paths:
         - name: applicationCode
           in: query
           required: false
+          schema:
+            type: string
+        - name: subjectProvider
+          in: query
+          required: false
+          description: Identity provider used to disambiguate duplicate external IDs
           schema:
             type: string
       responses:
@@ -270,6 +282,9 @@ components:
         resourceInstanceId:
           type: string
           description: Optional resource instance ID for instance-level checks
+        subjectProvider:
+          type: string
+          description: Identity provider used to disambiguate duplicate external IDs
 
     CheckAnyPermissionRequest:
       type: object
@@ -285,6 +300,9 @@ components:
             type: string
         resourceInstanceId:
           type: string
+        subjectProvider:
+          type: string
+          description: Identity provider used to disambiguate duplicate external IDs
 
     CheckPermissionResponse:
       type: object

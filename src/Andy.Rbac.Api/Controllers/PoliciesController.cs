@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using Andy.Rbac.Api.Services;
+using Andy.Rbac.Api.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -52,6 +53,7 @@ public class PoliciesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(PolicyDetail), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreatePolicy([FromBody] CreatePolicyRequest request, CancellationToken ct)
@@ -68,6 +70,7 @@ public class PoliciesController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(PolicyDetail), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -86,6 +89,7 @@ public class PoliciesController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

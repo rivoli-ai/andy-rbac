@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Andy.Rbac.Api.Telemetry;
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Infrastructure.Repositories;
+using Andy.Rbac.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Andy.Rbac.Api.Services;
@@ -11,15 +12,18 @@ public class PermissionEvaluator : IPermissionEvaluator
     private readonly RbacDbContext _db;
     private readonly IPermissionRepository _permissionRepository;
     private readonly ILogger<PermissionEvaluator> _logger;
+    private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public PermissionEvaluator(
         RbacDbContext db,
         IPermissionRepository permissionRepository,
-        ILogger<PermissionEvaluator> logger)
+        ILogger<PermissionEvaluator> logger,
+        IHttpContextAccessor? httpContextAccessor = null)
     {
         _db = db;
         _permissionRepository = permissionRepository;
         _logger = logger;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public async Task<PermissionCheckResult> CheckPermissionAsync(
@@ -28,6 +32,24 @@ public class PermissionEvaluator : IPermissionEvaluator
         IEnumerable<string>? groups = null,
         string? resourceInstanceId = null,
         CancellationToken ct = default)
+        => await CheckPermissionCoreAsync(subjectExternalId, subjectProvider: null, permission, groups, resourceInstanceId, ct);
+
+    public async Task<PermissionCheckResult> CheckPermissionForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        string permission,
+        IEnumerable<string>? groups = null,
+        string? resourceInstanceId = null,
+        CancellationToken ct = default)
+        => await CheckPermissionCoreAsync(subjectExternalId, subjectProvider, permission, groups, resourceInstanceId, ct);
+
+    private async Task<PermissionCheckResult> CheckPermissionCoreAsync(
+        string subjectExternalId,
+        string? subjectProvider,
+        string permission,
+        IEnumerable<string>? groups,
+        string? resourceInstanceId,
+        CancellationToken ct)
     {
         // OT4 (rivoli-ai/conductor#1262). Permission checks are the
         // operation Conductor most wants to attribute when a panel
@@ -50,6 +72,7 @@ public class PermissionEvaluator : IPermissionEvaluator
             activity?.SetTag("rbac.resource_instance_id", resourceInstanceId); // deprecated
         }
 
+        Guid? resolvedSubjectId = null;
         var result = await EvaluateAsync();
 
         var outcome = result.Allowed ? "granted" : "denied";
@@ -64,14 +87,22 @@ public class PermissionEvaluator : IPermissionEvaluator
             1,
             new KeyValuePair<string, object?>("andy.rbac.outcome", outcome),
             new KeyValuePair<string, object?>("andy.rbac.permission", permission));
+        await WriteAuditLogAsync(resolvedSubjectId, permission, resourceInstanceId, result, ct);
         return result;
 
         async Task<PermissionCheckResult> EvaluateAsync()
         {
             // Find subject by external ID
-            var subject = await _db.Subjects
-                .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+            var resolution = await SubjectResolver.ResolveAsync(
+                _db, subjectExternalId, subjectProvider, tracking: false, ct);
+            var subject = resolution.Subject;
+            resolvedSubjectId = subject?.Id;
+
+            if (resolution.IsAmbiguous)
+            {
+                _logger.LogWarning("Ambiguous subject external ID: {SubjectExternalId}", subjectExternalId);
+                return new PermissionCheckResult(false, "Subject provider is required for an ambiguous external ID");
+            }
 
             if (subject == null)
             {
@@ -100,7 +131,7 @@ public class PermissionEvaluator : IPermissionEvaluator
             // Check group-based permissions via ExternalGroupMapping
             if (groups != null)
             {
-                var roleIds = await GetRoleIdsForGroupsAsync(groups, ct);
+                var roleIds = await GetRoleIdsForGroupsAsync(groups, subjectProvider ?? subject.Provider, ct);
                 if (roleIds.Any())
                 {
                     var hasGroupPermission = await _permissionRepository.HasPermissionForRolesAsync(
@@ -121,6 +152,41 @@ public class PermissionEvaluator : IPermissionEvaluator
         }
     }
 
+    private async Task WriteAuditLogAsync(
+        Guid? subjectId,
+        string permission,
+        string? resourceInstanceId,
+        PermissionCheckResult result,
+        CancellationToken ct)
+    {
+        try
+        {
+            var permissionParts = permission.Split(':', 3);
+            var httpContext = _httpContextAccessor?.HttpContext;
+            _db.AuditLogs.Add(new RbacAuditLog
+            {
+                Id = Guid.NewGuid(),
+                SubjectId = subjectId,
+                EventType = AuditEventTypes.PermissionCheck,
+                ResourceType = permissionParts.Length == 3 ? permissionParts[1] : null,
+                ResourceInstanceId = resourceInstanceId,
+                PermissionCode = permission,
+                Result = result.Allowed ? "allowed" : "denied",
+                Context = string.IsNullOrWhiteSpace(result.Reason)
+                    ? null
+                    : new Dictionary<string, object> { ["reason"] = result.Reason },
+                IpAddress = httpContext?.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = httpContext?.Request.Headers.UserAgent.ToString()
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            // Audit persistence must never change the authorization decision.
+            _logger.LogError(ex, "Failed to persist RBAC permission-check audit event");
+        }
+    }
+
     public async Task<PermissionCheckResult> CheckAnyPermissionAsync(
         string subjectExternalId,
         IEnumerable<string> permissions,
@@ -138,32 +204,67 @@ public class PermissionEvaluator : IPermissionEvaluator
         return new PermissionCheckResult(false, "None of the required permissions found");
     }
 
+    public async Task<PermissionCheckResult> CheckAnyPermissionForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        IEnumerable<string> permissions,
+        IEnumerable<string>? groups = null,
+        string? resourceInstanceId = null,
+        CancellationToken ct = default)
+    {
+        foreach (var permission in permissions)
+        {
+            var result = await CheckPermissionForProviderAsync(
+                subjectExternalId, subjectProvider, permission, groups, resourceInstanceId, ct);
+            if (result.Allowed)
+                return result;
+        }
+
+        return new PermissionCheckResult(false, "None of the required permissions found");
+    }
+
     public async Task<IReadOnlyList<string>> GetPermissionsAsync(
         string subjectExternalId,
         IEnumerable<string>? groups = null,
         string? applicationCode = null,
         CancellationToken ct = default)
+        => await GetPermissionsCoreAsync(subjectExternalId, subjectProvider: null, groups, applicationCode, ct);
+
+    public async Task<IReadOnlyList<string>> GetPermissionsForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        IEnumerable<string>? groups = null,
+        string? applicationCode = null,
+        CancellationToken ct = default)
+        => await GetPermissionsCoreAsync(subjectExternalId, subjectProvider, groups, applicationCode, ct);
+
+    private async Task<IReadOnlyList<string>> GetPermissionsCoreAsync(
+        string subjectExternalId,
+        string? subjectProvider,
+        IEnumerable<string>? groups,
+        string? applicationCode,
+        CancellationToken ct)
     {
         var permissions = new HashSet<string>();
 
-        var subject = await _db.Subjects
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        var resolution = await SubjectResolver.ResolveAsync(
+            _db, subjectExternalId, subjectProvider, tracking: false, ct);
+        var subject = resolution.Subject;
 
-        if (subject != null && subject.IsActive)
-        {
-            var subjectPermissions = await _permissionRepository.GetPermissionsForSubjectAsync(
-                subject.Id,
-                applicationCode,
-                ct);
-            foreach (var p in subjectPermissions)
-                permissions.Add(p);
-        }
+        if (resolution.IsAmbiguous || subject is null || !subject.IsActive)
+            return [];
+
+        var subjectPermissions = await _permissionRepository.GetPermissionsForSubjectAsync(
+            subject.Id,
+            applicationCode,
+            ct);
+        foreach (var p in subjectPermissions)
+            permissions.Add(p);
 
         // Add permissions from groups
         if (groups != null)
         {
-            var roleIds = await GetRoleIdsForGroupsAsync(groups, ct);
+            var roleIds = await GetRoleIdsForGroupsAsync(groups, subjectProvider ?? subject.Provider, ct);
             if (roleIds.Any())
             {
                 var groupPermissions = await _permissionRepository.GetPermissionsForRolesAsync(
@@ -183,22 +284,38 @@ public class PermissionEvaluator : IPermissionEvaluator
         IEnumerable<string>? groups = null,
         string? applicationCode = null,
         CancellationToken ct = default)
+        => await GetRolesCoreAsync(subjectExternalId, subjectProvider: null, groups, applicationCode, ct);
+
+    public async Task<IReadOnlyList<string>> GetRolesForProviderAsync(
+        string subjectExternalId,
+        string subjectProvider,
+        IEnumerable<string>? groups = null,
+        string? applicationCode = null,
+        CancellationToken ct = default)
+        => await GetRolesCoreAsync(subjectExternalId, subjectProvider, groups, applicationCode, ct);
+
+    private async Task<IReadOnlyList<string>> GetRolesCoreAsync(
+        string subjectExternalId,
+        string? subjectProvider,
+        IEnumerable<string>? groups,
+        string? applicationCode,
+        CancellationToken ct)
     {
         var roles = new HashSet<string>();
 
-        var subject = await _db.Subjects
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ExternalId == subjectExternalId, ct);
+        var resolution = await SubjectResolver.ResolveAsync(
+            _db, subjectExternalId, subjectProvider, tracking: false, ct);
+        var subject = resolution.Subject;
 
-        if (subject != null && subject.IsActive)
-        {
-            var subjectRoles = await _permissionRepository.GetRolesForSubjectAsync(
-                subject.Id,
-                applicationCode,
-                ct);
-            foreach (var r in subjectRoles)
-                roles.Add(r);
-        }
+        if (resolution.IsAmbiguous || subject is null || !subject.IsActive)
+            return [];
+
+        var subjectRoles = await _permissionRepository.GetRolesForSubjectAsync(
+            subject.Id,
+            applicationCode,
+            ct);
+        foreach (var r in subjectRoles)
+            roles.Add(r);
 
         // Add roles from groups
         if (groups != null)
@@ -207,6 +324,7 @@ public class PermissionEvaluator : IPermissionEvaluator
                 .AsNoTracking()
                 .Where(m => groups.Contains(m.ExternalGroupId) || groups.Contains(m.ExternalGroupName))
                 .Where(m => m.SyncEnabled)
+                .Where(m => m.Provider == (subjectProvider ?? subject.Provider))
                 .Include(m => m.Role)
                 .Where(m => applicationCode == null || m.Role.ApplicationId == null || m.Role.Application!.Code == applicationCode)
                 .Select(m => m.Role.Code)
@@ -223,7 +341,10 @@ public class PermissionEvaluator : IPermissionEvaluator
     /// Gets role IDs from ExternalGroupMapping for the given group codes.
     /// Groups can be matched by ExternalGroupId or ExternalGroupName.
     /// </summary>
-    private async Task<List<Guid>> GetRoleIdsForGroupsAsync(IEnumerable<string> groups, CancellationToken ct)
+    private async Task<List<Guid>> GetRoleIdsForGroupsAsync(
+        IEnumerable<string> groups,
+        string? provider,
+        CancellationToken ct)
     {
         var groupList = groups.ToList();
         if (!groupList.Any())
@@ -233,6 +354,7 @@ public class PermissionEvaluator : IPermissionEvaluator
             .AsNoTracking()
             .Where(m => groupList.Contains(m.ExternalGroupId) || (m.ExternalGroupName != null && groupList.Contains(m.ExternalGroupName)))
             .Where(m => m.SyncEnabled)
+            .Where(m => provider == null || m.Provider == provider)
             .Select(m => m.RoleId)
             .Distinct()
             .ToListAsync(ct);

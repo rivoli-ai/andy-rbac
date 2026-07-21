@@ -14,6 +14,75 @@ public class PermissionRepository : IPermissionRepository
     }
 
     /// <summary>
+    /// Returns every role currently effective for a subject. In addition to
+    /// direct SubjectRole assignments this includes roles assigned to active
+    /// teams the subject belongs to and to their active ancestor teams.
+    /// </summary>
+    private async Task<HashSet<Guid>> GetEffectiveRoleIdsAsync(
+        Guid subjectId,
+        string? resourceInstanceId,
+        bool globalOnly,
+        CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var directQuery = _db.SubjectRoles
+            .Where(sr => sr.SubjectId == subjectId)
+            .Where(sr => sr.ExpiresAt == null || sr.ExpiresAt > now);
+
+        directQuery = globalOnly
+            ? directQuery.Where(sr => sr.ResourceInstanceId == null)
+            : directQuery.Where(sr => sr.ResourceInstanceId == null || sr.ResourceInstanceId == resourceInstanceId);
+
+        var roleIds = (await directQuery.Select(sr => sr.RoleId).ToListAsync(ct)).ToHashSet();
+
+        var memberTeamIds = await _db.TeamMembers
+            .Where(tm => tm.SubjectId == subjectId)
+            .Select(tm => tm.TeamId)
+            .ToListAsync(ct);
+
+        if (memberTeamIds.Count == 0)
+            return roleIds;
+
+        // Load the small team graph once and walk towards each parent. Stop at
+        // an inactive team: disabling a child team disables both its own grant
+        // source and inheritance through that membership path.
+        var teams = await _db.Teams
+            .AsNoTracking()
+            .Select(t => new { t.Id, t.ParentTeamId, t.IsActive })
+            .ToDictionaryAsync(t => t.Id, ct);
+
+        var effectiveTeamIds = new HashSet<Guid>();
+        foreach (var memberTeamId in memberTeamIds)
+        {
+            Guid? current = memberTeamId;
+            var path = new HashSet<Guid>();
+            while (current.HasValue && path.Add(current.Value) && teams.TryGetValue(current.Value, out var team))
+            {
+                if (!team.IsActive)
+                    break;
+
+                effectiveTeamIds.Add(team.Id);
+                current = team.ParentTeamId;
+            }
+        }
+
+        if (effectiveTeamIds.Count == 0)
+            return roleIds;
+
+        var teamRoleQuery = _db.TeamRoles
+            .Where(tr => effectiveTeamIds.Contains(tr.TeamId))
+            .Where(tr => tr.ExpiresAt == null || tr.ExpiresAt > now);
+
+        teamRoleQuery = globalOnly
+            ? teamRoleQuery.Where(tr => tr.ResourceInstanceId == null)
+            : teamRoleQuery.Where(tr => tr.ResourceInstanceId == null || tr.ResourceInstanceId == resourceInstanceId);
+
+        roleIds.UnionWith(await teamRoleQuery.Select(tr => tr.RoleId).ToListAsync(ct));
+        return roleIds;
+    }
+
+    /// <summary>
     /// Expand a starting set of role IDs to include all of their ancestors
     /// (parents, grandparents, ...) walking the <c>ParentRoleId</c> chain.
     /// Cycle-safe — the loop terminates as soon as a frontier yields no new
@@ -47,15 +116,7 @@ public class PermissionRepository : IPermissionRepository
         string? applicationCode = null,
         CancellationToken ct = default)
     {
-        var now = DateTimeOffset.UtcNow;
-
-        // First get the role IDs assigned to the subject
-        var roleIds = await _db.SubjectRoles
-            .Where(sr => sr.SubjectId == subjectId)
-            .Where(sr => sr.ExpiresAt == null || sr.ExpiresAt > now)
-            .Where(sr => sr.ResourceInstanceId == null) // Only global role assignments
-            .Select(sr => sr.RoleId)
-            .ToListAsync(ct);
+        var roleIds = await GetEffectiveRoleIdsAsync(subjectId, resourceInstanceId: null, globalOnly: true, ct);
 
         if (!roleIds.Any())
             return [];
@@ -93,13 +154,8 @@ public class PermissionRepository : IPermissionRepository
         string? applicationCode = null,
         CancellationToken ct = default)
     {
-        var now = DateTimeOffset.UtcNow;
-
-        var query = _db.SubjectRoles
-            .Where(sr => sr.SubjectId == subjectId)
-            .Where(sr => sr.ExpiresAt == null || sr.ExpiresAt > now)
-            .Where(sr => sr.ResourceInstanceId == null)
-            .Select(sr => sr.Role);
+        var roleIds = await GetEffectiveRoleIdsAsync(subjectId, resourceInstanceId: null, globalOnly: true, ct);
+        var query = _db.Roles.Where(r => roleIds.Contains(r.Id));
 
         if (!string.IsNullOrEmpty(applicationCode))
         {
@@ -130,13 +186,7 @@ public class PermissionRepository : IPermissionRepository
         var resourceCode = parts[1];
         var actionCode = parts[2];
 
-        // First get the role IDs assigned to the subject
-        var roleIds = await _db.SubjectRoles
-            .Where(sr => sr.SubjectId == subjectId)
-            .Where(sr => sr.ExpiresAt == null || sr.ExpiresAt > now)
-            .Where(sr => sr.ResourceInstanceId == null || sr.ResourceInstanceId == resourceInstanceId)
-            .Select(sr => sr.RoleId)
-            .ToListAsync(ct);
+        var roleIds = await GetEffectiveRoleIdsAsync(subjectId, resourceInstanceId, globalOnly: false, ct);
 
         if (!roleIds.Any())
         {

@@ -1,4 +1,5 @@
 using Andy.Rbac.Api.Data;
+using Andy.Rbac.Api.Authorization;
 using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Middleware;
 using Andy.Rbac.Api.Services;
@@ -64,6 +65,7 @@ builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<IPolicyService, PolicyService>();
 // SM.2.11 — grant lifecycle (admin revoke + server-side expiry push).
 builder.Services.AddScoped<IGrantService, GrantService>();
+builder.Services.AddScoped<IResourceInstanceService, ResourceInstanceService>();
 builder.Services.Configure<GrantExpiryWorkerOptions>(
     builder.Configuration.GetSection(GrantExpiryWorkerOptions.SectionName));
 builder.Services.AddHostedService<GrantExpiryWorker>();
@@ -105,6 +107,7 @@ builder.Services.AddScoped<RbacMcpTools>();
 
 // Add HttpClient for DCR proxy
 builder.Services.AddHttpClient();
+builder.Services.AddHttpContextAccessor();
 
 // Configure MCP server URL - must be the actual public URL for the deployment.
 // Sourced from .env / compose env (ANDY_RBAC_API_BASE_URL → Mcp__ServerUrl).
@@ -193,7 +196,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOpt
     options.DefaultChallengeScheme = McpAuthenticationDefaults.AuthenticationScheme;
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(RbacAuthorizationPolicies.Administrator, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireAssertion(context => RbacAuthorizationPolicies.IsAdministrator(context.User));
+    });
+});
 
 // --- OpenTelemetry (via Andy.Telemetry) ---
 // OT4 (rivoli-ai/conductor#1262): andy-rbac ships zero OTel DLLs today.

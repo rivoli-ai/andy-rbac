@@ -48,7 +48,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "test-app:document:read" });
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK);
@@ -72,7 +72,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<string>?)null);
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK, new { Allowed = true, Reason = (string?)null });
@@ -86,7 +86,8 @@ public class RbacHttpClientTests
         handlerMock.Protected().Verify(
             "SendAsync",
             Times.Once(),
-            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/check"),
             ItExpr.IsAny<CancellationToken>());
     }
 
@@ -116,7 +117,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "test-app:document:read" });
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK, new { Allowed = true, Reason = (string?)null });
@@ -170,7 +171,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "test-app:document:read" });
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK);
@@ -204,7 +205,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "test-app:document:read", "test-app:document:write" });
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK);
@@ -222,7 +223,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string> { "test-app:document:read" });
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK);
@@ -241,7 +242,7 @@ public class RbacHttpClientTests
         // Arrange
         _options.Cache.Enabled = true;
         var cachedPermissions = new List<string> { "test-app:document:read" };
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedPermissions);
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK);
@@ -259,7 +260,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetPermissionsAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<string>?)null);
 
         var permissions = new List<string> { "test-app:document:read", "test-app:document:write" };
@@ -271,11 +272,12 @@ public class RbacHttpClientTests
 
         // Assert
         result.Should().BeEquivalentTo(permissions);
-        _cacheMock.Verify(c => c.SetPermissionsAsync("user-123", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _cacheMock.Verify(c => c.SetPermissionsAsync(
+            "user-123", It.IsAny<IReadOnlyList<string>>(), null, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task GetPermissionsAsync_WithApplicationFilter_BypassesCache()
+    public async Task GetPermissionsAsync_WithApplicationFilter_UsesScopedCacheKey()
     {
         // Arrange
         _options.Cache.Enabled = true;
@@ -288,8 +290,11 @@ public class RbacHttpClientTests
 
         // Assert
         result.Should().BeEquivalentTo(permissions);
-        // Cache should not be checked or set when applicationCode is specified
-        _cacheMock.Verify(c => c.GetPermissionsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _cacheMock.Verify(c => c.GetPermissionsAsync(
+            "user-123", "other-app", null, It.IsAny<CancellationToken>()), Times.Once);
+        _cacheMock.Verify(c => c.SetPermissionsAsync(
+            "user-123", It.IsAny<IReadOnlyList<string>>(), "other-app", null,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -298,7 +303,7 @@ public class RbacHttpClientTests
         // Arrange
         _options.Cache.Enabled = true;
         var cachedRoles = new List<string> { "admin", "editor" };
-        _cacheMock.Setup(c => c.GetRolesAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetRolesAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedRoles);
 
         var handlerMock = CreateHandlerMock(HttpStatusCode.OK);
@@ -316,7 +321,7 @@ public class RbacHttpClientTests
     {
         // Arrange
         _options.Cache.Enabled = true;
-        _cacheMock.Setup(c => c.GetRolesAsync("user-123", It.IsAny<CancellationToken>()))
+        _cacheMock.Setup(c => c.GetRolesAsync("user-123", null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<string>?)null);
 
         var roles = new List<string> { "admin" };
@@ -328,7 +333,8 @@ public class RbacHttpClientTests
 
         // Assert
         result.Should().BeEquivalentTo(roles);
-        _cacheMock.Verify(c => c.SetRolesAsync("user-123", It.IsAny<IReadOnlyList<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+        _cacheMock.Verify(c => c.SetRolesAsync(
+            "user-123", It.IsAny<IReadOnlyList<string>>(), null, null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -345,7 +351,8 @@ public class RbacHttpClientTests
         handlerMock.Protected().Verify(
             "SendAsync",
             Times.Once(),
-            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/roles/assign"),
             ItExpr.IsAny<CancellationToken>());
         _cacheMock.Verify(c => c.InvalidateAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -361,6 +368,12 @@ public class RbacHttpClientTests
         await client.RevokeRoleAsync("user-123", "admin");
 
         // Assert
+        handlerMock.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/roles/revoke"),
+            ItExpr.IsAny<CancellationToken>());
         _cacheMock.Verify(c => c.InvalidateAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -402,6 +415,12 @@ public class RbacHttpClientTests
         await client.GrantInstancePermissionAsync("user-123", "document", "doc-456", "read");
 
         // Assert
+        handlerMock.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/instances/permissions"),
+            ItExpr.IsAny<CancellationToken>());
         _cacheMock.Verify(c => c.InvalidateAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -416,6 +435,14 @@ public class RbacHttpClientTests
         await client.RevokeInstancePermissionAsync("user-123", "document", "doc-456", "read");
 
         // Assert
+        handlerMock.Protected().Verify(
+            "SendAsync",
+            Times.Once(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Delete &&
+                request.RequestUri!.AbsolutePath == "/api/instances/document/doc-456/permissions/user-123/read" &&
+                request.RequestUri.Query.Contains("applicationCode=test-app")),
+            ItExpr.IsAny<CancellationToken>());
         _cacheMock.Verify(c => c.InvalidateAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -433,7 +460,8 @@ public class RbacHttpClientTests
         handlerMock.Protected().Verify(
             "SendAsync",
             Times.Once(),
-            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/instances"),
             ItExpr.IsAny<CancellationToken>());
     }
 
@@ -451,7 +479,10 @@ public class RbacHttpClientTests
         handlerMock.Protected().Verify(
             "SendAsync",
             Times.Once(),
-            ItExpr.IsAny<HttpRequestMessage>(),
+            ItExpr.Is<HttpRequestMessage>(request =>
+                request.Method == HttpMethod.Delete &&
+                request.RequestUri!.AbsolutePath == "/api/instances/document/doc-456" &&
+                request.RequestUri.Query.Contains("applicationCode=test-app")),
             ItExpr.IsAny<CancellationToken>());
     }
 }

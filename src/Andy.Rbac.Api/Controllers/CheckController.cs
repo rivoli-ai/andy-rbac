@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Andy.Rbac.Api.Services;
+using Andy.Rbac.Api.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -29,18 +30,11 @@ public class CheckController : ControllerBase
     /// only directly-granted permissions are considered. Stored group
     /// memberships per subject are tracked separately (out of scope here).
     /// </summary>
-    private List<string>? GroupsForSubject(string subjectExternalId)
-    {
-        var callerSub = User.FindFirst("sub")?.Value
-            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (callerSub is null || !string.Equals(callerSub, subjectExternalId, StringComparison.Ordinal))
-        {
-            return null;
-        }
+    private string? EffectiveProvider(string subjectExternalId, string? requestedProvider) =>
+        TrustedCallerIdentity.EffectiveProvider(User, subjectExternalId, requestedProvider);
 
-        var groups = User.FindAll("groups").Select(c => c.Value).ToList();
-        return groups.Count > 0 ? groups : null;
-    }
+    private IReadOnlyList<string>? GroupsForSubject(string subjectExternalId, string? selectedProvider) =>
+        TrustedCallerIdentity.GroupsFor(User, subjectExternalId, selectedProvider);
 
     /// <summary>
     /// Checks if a subject has a specific permission.
@@ -49,12 +43,14 @@ public class CheckController : ControllerBase
     [ProducesResponseType(typeof(CheckPermissionResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckPermission([FromBody] CheckPermissionRequest request, CancellationToken ct)
     {
-        var result = await _evaluator.CheckPermissionAsync(
-            request.SubjectId,
-            request.Permission,
-            GroupsForSubject(request.SubjectId),
-            request.ResourceInstanceId,
-            ct);
+        var provider = EffectiveProvider(request.SubjectId, request.SubjectProvider);
+        var groups = GroupsForSubject(request.SubjectId, provider);
+        var result = string.IsNullOrWhiteSpace(provider)
+            ? await _evaluator.CheckPermissionAsync(
+                request.SubjectId, request.Permission, groups, request.ResourceInstanceId, ct)
+            : await _evaluator.CheckPermissionForProviderAsync(
+                request.SubjectId, provider, request.Permission,
+                groups, request.ResourceInstanceId, ct);
 
         return Ok(new CheckPermissionResponse
         {
@@ -70,12 +66,14 @@ public class CheckController : ControllerBase
     [ProducesResponseType(typeof(CheckPermissionResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckAnyPermission([FromBody] CheckAnyPermissionRequest request, CancellationToken ct)
     {
-        var result = await _evaluator.CheckAnyPermissionAsync(
-            request.SubjectId,
-            request.Permissions,
-            GroupsForSubject(request.SubjectId),
-            request.ResourceInstanceId,
-            ct);
+        var provider = EffectiveProvider(request.SubjectId, request.SubjectProvider);
+        var groups = GroupsForSubject(request.SubjectId, provider);
+        var result = string.IsNullOrWhiteSpace(provider)
+            ? await _evaluator.CheckAnyPermissionAsync(
+                request.SubjectId, request.Permissions, groups, request.ResourceInstanceId, ct)
+            : await _evaluator.CheckAnyPermissionForProviderAsync(
+                request.SubjectId, provider, request.Permissions,
+                groups, request.ResourceInstanceId, ct);
 
         return Ok(new CheckPermissionResponse
         {
@@ -92,9 +90,14 @@ public class CheckController : ControllerBase
     public async Task<IActionResult> GetPermissions(
         string subjectId,
         [FromQuery] string? applicationCode,
+        [FromQuery] string? subjectProvider,
         CancellationToken ct)
     {
-        var permissions = await _evaluator.GetPermissionsAsync(subjectId, GroupsForSubject(subjectId), applicationCode, ct);
+        var provider = EffectiveProvider(subjectId, subjectProvider);
+        var groups = GroupsForSubject(subjectId, provider);
+        var permissions = string.IsNullOrWhiteSpace(provider)
+            ? await _evaluator.GetPermissionsAsync(subjectId, groups, applicationCode, ct)
+            : await _evaluator.GetPermissionsForProviderAsync(subjectId, provider, groups, applicationCode, ct);
         return Ok(new GetPermissionsResponse { Permissions = permissions.ToList() });
     }
 
@@ -106,9 +109,14 @@ public class CheckController : ControllerBase
     public async Task<IActionResult> GetRoles(
         string subjectId,
         [FromQuery] string? applicationCode,
+        [FromQuery] string? subjectProvider,
         CancellationToken ct)
     {
-        var roles = await _evaluator.GetRolesAsync(subjectId, GroupsForSubject(subjectId), applicationCode, ct);
+        var provider = EffectiveProvider(subjectId, subjectProvider);
+        var groups = GroupsForSubject(subjectId, provider);
+        var roles = string.IsNullOrWhiteSpace(provider)
+            ? await _evaluator.GetRolesAsync(subjectId, groups, applicationCode, ct)
+            : await _evaluator.GetRolesForProviderAsync(subjectId, provider, groups, applicationCode, ct);
         return Ok(new GetRolesResponse { Roles = roles.ToList() });
     }
 }
@@ -119,10 +127,12 @@ public class CheckController : ControllerBase
 /// <param name="SubjectId">External ID of the subject (user).</param>
 /// <param name="Permission">Permission code in format "app:resource:action".</param>
 /// <param name="ResourceInstanceId">Optional resource instance ID for instance-level checks.</param>
+/// <param name="SubjectProvider">Optional identity provider used to disambiguate the subject.</param>
 public record CheckPermissionRequest(
     string SubjectId,
     string Permission,
-    string? ResourceInstanceId = null);
+    string? ResourceInstanceId = null,
+    string? SubjectProvider = null);
 
 /// <summary>
 /// Request to check if subject has any of multiple permissions.
@@ -130,7 +140,8 @@ public record CheckPermissionRequest(
 public record CheckAnyPermissionRequest(
     string SubjectId,
     List<string> Permissions,
-    string? ResourceInstanceId = null);
+    string? ResourceInstanceId = null,
+    string? SubjectProvider = null);
 
 public record CheckPermissionResponse { public bool Allowed { get; init; } public string? Reason { get; init; } }
 public record GetPermissionsResponse { public List<string> Permissions { get; init; } = []; }

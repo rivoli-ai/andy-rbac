@@ -38,6 +38,7 @@ public class RequirePermissionAttributeTests
 
         // Assert
         attribute.ResourceIdParameter.Should().Be("documentId");
+        attribute.Policy.Should().Contain("resource=documentId");
     }
 
     [Fact]
@@ -75,6 +76,7 @@ public class RequirePermissionAttributeTests
 
         // Assert
         attribute.ResourceIdBodyPath.Should().Be("data.id");
+        attribute.Policy.Should().Contain("body=True").And.Contain("path=data.id");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Andy.Rbac.Infrastructure.Data;
+using Andy.Rbac.Api.Authorization;
 using Andy.Rbac.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -127,6 +128,7 @@ public class SubjectsController : ControllerBase
     /// Creates or updates a subject (provision/sync).
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(SubjectDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(SubjectDto), StatusCodes.Status201Created)]
     public async Task<IActionResult> ProvisionSubject([FromBody] ProvisionSubjectRequest request, CancellationToken ct)
@@ -172,6 +174,7 @@ public class SubjectsController : ControllerBase
     /// Updates a subject.
     /// </summary>
     [HttpPut("{id:guid}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(SubjectDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateSubject(Guid id, [FromBody] UpdateSubjectRequest request, CancellationToken ct)
@@ -194,6 +197,7 @@ public class SubjectsController : ControllerBase
     /// Deactivates a subject.
     /// </summary>
     [HttpPost("{id:guid}/deactivate")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeactivateSubject(Guid id, CancellationToken ct)
@@ -214,6 +218,7 @@ public class SubjectsController : ControllerBase
     /// Assigns a role to a subject.
     /// </summary>
     [HttpPost("{id:guid}/roles")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -257,6 +262,7 @@ public class SubjectsController : ControllerBase
     /// Revokes a role from a subject.
     /// </summary>
     [HttpDelete("{id:guid}/roles/{roleCode}")]
+    [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

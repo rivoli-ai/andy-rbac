@@ -131,6 +131,28 @@ public class RbacApiService
             Teams = teams.Count
         };
     }
+
+    public async Task<PagedResult<AuditLogDto>> GetAuditLogsAsync(
+        DateTimeOffset? since = null,
+        string? eventType = null,
+        string? result = null,
+        string? search = null,
+        int skip = 0,
+        int take = 50)
+    {
+        var url = $"api/audit?skip={Math.Max(0, skip)}&take={Math.Clamp(take, 1, 500)}";
+        if (since.HasValue)
+            url += $"&since={Uri.EscapeDataString(since.Value.ToString("O"))}";
+        if (!string.IsNullOrWhiteSpace(eventType))
+            url += $"&eventType={Uri.EscapeDataString(eventType)}";
+        if (!string.IsNullOrWhiteSpace(result))
+            url += $"&result={Uri.EscapeDataString(result)}";
+        if (!string.IsNullOrWhiteSpace(search))
+            url += $"&search={Uri.EscapeDataString(search)}";
+        var response = await _httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PagedResult<AuditLogDto>>(JsonOptions) ?? new();
+    }
 }
 
 // DTOs
@@ -201,3 +223,14 @@ public record DashboardStats
     public int Subjects { get; init; }
     public int Teams { get; init; }
 }
+
+public record AuditLogDto(
+    Guid Id,
+    DateTimeOffset Timestamp,
+    string EventType,
+    string SubjectExternalId,
+    string ApplicationCode,
+    string? ResourceType,
+    string? ResourceId,
+    string? Action,
+    string Result);
