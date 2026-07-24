@@ -1,4 +1,6 @@
 using Andy.Rbac.Infrastructure.Data;
+using Andy.Rbac.Messaging;
+using Andy.Rbac.Messaging.Events;
 using Andy.Rbac.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,8 +9,60 @@ namespace Andy.Rbac.Api.Services;
 public sealed class ResourceInstanceService : IResourceInstanceService
 {
     private readonly RbacDbContext _db;
+    private readonly IRbacEventPublisher _events;
 
-    public ResourceInstanceService(RbacDbContext db) => _db = db;
+    public ResourceInstanceService(RbacDbContext db, IRbacEventPublisher events)
+    {
+        _db = db;
+        _events = events;
+    }
+
+    /// <summary>
+    /// Stages a <c>grant.revoked</c> outbox row for each instance permission
+    /// being removed, in the same transaction as the removal (SM.2.11).
+    ///
+    /// <see cref="GrantService.RevokeAsync"/> did this for the by-GUID admin
+    /// path, but the paths clients actually call — <c>DELETE
+    /// /api/instances/.../permissions/...</c> and instance removal, which
+    /// cascade-deletes every grant on the instance — emitted nothing. A
+    /// consumer therefore kept treating a revoked grant as live until its own
+    /// cache lapsed, which is the stale-grant disagreement SM.2.11 exists to
+    /// close.
+    /// </summary>
+    private async Task StageGrantRevokedAsync(
+        IReadOnlyCollection<Guid> instancePermissionIds,
+        string? revokedByPrincipal,
+        CancellationToken ct)
+    {
+        if (instancePermissionIds.Count == 0)
+            return;
+
+        // Re-read with the navigation properties the event payload needs;
+        // Permission.Code is computed from ResourceType/Application/Action.
+        var grants = await _db.InstancePermissions
+            .Include(ip => ip.Subject)
+            .Include(ip => ip.Permission)
+                .ThenInclude(p => p.ResourceType)
+                    .ThenInclude(rt => rt.Application)
+            .Include(ip => ip.Permission)
+                .ThenInclude(p => p.Action)
+            .Include(ip => ip.ResourceInstance)
+            .Where(ip => instancePermissionIds.Contains(ip.Id))
+            .ToListAsync(ct);
+
+        var revokedAt = DateTimeOffset.UtcNow;
+        foreach (var grant in grants)
+        {
+            _events.GrantRevoked(new GrantRevoked(
+                GrantId: grant.Id,
+                Principal: grant.Subject.ExternalId,
+                SubjectId: grant.SubjectId,
+                PermissionCode: grant.Permission.Code,
+                ScopeResourceInstanceId: grant.ResourceInstance?.ExternalId,
+                RevokedByPrincipal: revokedByPrincipal,
+                RevokedAt: revokedAt));
+        }
+    }
 
     public async Task<ResourceInstanceMutationResult> RegisterAsync(
         string applicationCode, string resourceTypeCode, string externalId,
@@ -61,11 +115,20 @@ public sealed class ResourceInstanceService : IResourceInstanceService
 
     public async Task<ResourceInstanceMutationResult> RemoveAsync(
         string applicationCode, string resourceTypeCode, string externalId,
-        CancellationToken ct = default)
+        string? revokedByPrincipal = null, CancellationToken ct = default)
     {
         var instance = await ResolveInstanceAsync(applicationCode, resourceTypeCode, externalId, ct);
         if (instance is null)
             return ResourceInstanceMutationResult.Missing("Resource instance not found");
+
+        // Removing the instance cascade-deletes its InstancePermission rows.
+        // Announce each one before the cascade takes them, so consumers learn
+        // the grants died rather than inferring it later.
+        var cascadedGrantIds = await _db.InstancePermissions
+            .Where(ip => ip.ResourceInstanceId == instance.Id)
+            .Select(ip => ip.Id)
+            .ToListAsync(ct);
+        await StageGrantRevokedAsync(cascadedGrantIds, revokedByPrincipal, ct);
 
         _db.ResourceInstances.Remove(instance);
         await _db.SaveChangesAsync(ct);
@@ -121,7 +184,7 @@ public sealed class ResourceInstanceService : IResourceInstanceService
     public async Task<ResourceInstanceMutationResult> RevokeAsync(
         string applicationCode, string resourceTypeCode, string externalId,
         string subjectExternalId, string? subjectProvider, string action,
-        CancellationToken ct = default)
+        string? revokedByPrincipal = null, CancellationToken ct = default)
     {
         var instance = await ResolveInstanceAsync(applicationCode, resourceTypeCode, externalId, ct);
         if (instance is null)
@@ -141,6 +204,8 @@ public sealed class ResourceInstanceService : IResourceInstanceService
             ip.Permission.Action.Code == action, ct);
         if (grant is null)
             return ResourceInstanceMutationResult.Missing("Instance permission grant not found");
+
+        await StageGrantRevokedAsync([grant.Id], revokedByPrincipal, ct);
 
         _db.InstancePermissions.Remove(grant);
         await _db.SaveChangesAsync(ct);

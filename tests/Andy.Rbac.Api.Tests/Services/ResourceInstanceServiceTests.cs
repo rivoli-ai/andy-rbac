@@ -20,7 +20,7 @@ public sealed class ResourceInstanceServiceTests
             DisplayName = "Original"
         });
         await context.SaveChangesAsync();
-        var service = new ResourceInstanceService(context);
+        var service = new ResourceInstanceService(context, new Andy.Rbac.Infrastructure.Messaging.RbacEventPublisher(context));
 
         var result = await service.RegisterAsync(
             "test-app", "document", "doc-owned",

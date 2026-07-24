@@ -1,7 +1,9 @@
+using System.Security.Claims;
 using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Models;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -18,7 +20,22 @@ public class RbacMcpToolsTests
     private readonly Mock<IPolicyService> _policyServiceMock = new();
     private readonly Mock<ILogger<RbacMcpTools>> _loggerMock = new();
 
-    private RbacMcpTools CreateTools()
+    /// <summary>
+    /// An accessor carrying the given principal. The admin guard fails closed,
+    /// so tests exercising mutating tools must state the authority they assume
+    /// rather than inheriting it from a null accessor.
+    /// </summary>
+    private static IHttpContextAccessor AccessorFor(params string[] roles)
+    {
+        var claims = roles.Select(role => new Claim(ClaimTypes.Role, role));
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"))
+        };
+        return new HttpContextAccessor { HttpContext = context };
+    }
+
+    private RbacMcpTools CreateTools(IHttpContextAccessor? accessor = null)
     {
         return new RbacMcpTools(
             _evaluatorMock.Object,
@@ -27,7 +44,45 @@ public class RbacMcpToolsTests
             _teamServiceMock.Object,
             _subjectServiceMock.Object,
             _policyServiceMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            accessor ?? AccessorFor("super-admin"));
+    }
+
+    // ==================== Administrator guard ====================
+
+    [Fact]
+    public async Task MutatingTool_WithNoHttpContext_IsDenied()
+    {
+        // The guard used to return early when the accessor was absent, so a DI
+        // mistake would have opened every mutating tool instead of breaking it.
+        var tools = CreateTools(accessor: new HttpContextAccessor { HttpContext = null });
+
+        var act = async () => await tools.CreateApplication("new-app", "New App", null);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task MutatingTool_WithNonAdministratorPrincipal_IsDenied()
+    {
+        var tools = CreateTools(AccessorFor("viewer"));
+
+        var act = async () => await tools.AssignRoleToUser("user-123", "admin");
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task ReadOnlyTool_DoesNotRequireAdministrator()
+    {
+        var tools = CreateTools(AccessorFor("viewer"));
+        _evaluatorMock
+            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PermissionCheckResult(true));
+
+        var result = await tools.CheckPermission("user-123", "app:doc:read");
+
+        result.Allowed.Should().BeTrue();
     }
 
     // ==================== Permission Checking Tests ====================

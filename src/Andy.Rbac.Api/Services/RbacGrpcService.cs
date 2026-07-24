@@ -216,7 +216,9 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         var result = await service.RevokeAsync(
             request.ApplicationCode, request.ResourceTypeCode, request.ResourceInstanceId,
             request.SubjectId, request.HasSubjectProvider ? request.SubjectProvider : null,
-            request.Action, context.CancellationToken);
+            request.Action,
+            GetUser(context) is { } caller ? TrustedCallerIdentity.SubjectId(caller) : null,
+            context.CancellationToken);
         return new RevokeInstancePermissionResponse { Success = result.Success, Message = result.Error ?? "Permission revoked" };
     }
 
@@ -233,11 +235,32 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         }
     }
 
+    /// <summary>
+    /// Gates the mutating RPCs on the Administrator policy.
+    ///
+    /// Fails closed: a missing <see cref="IAuthorizationService"/> denies rather
+    /// than allows. It previously returned early, so the consequence of a DI
+    /// mistake, a refactor, or a hand-constructed instance was unauthenticated
+    /// access to AssignRole/RevokeRole/ProvisionSubject/Grant*, rather than an
+    /// outage. Unit tests that exercise these RPCs pass an explicit permissive
+    /// authorization service.
+    /// </summary>
     private async Task EnsureAdministratorAsync(ServerCallContext context)
     {
-        if (_authorizationService is null) return;
+        if (_authorizationService is null)
+        {
+            throw new RpcException(new Status(
+                StatusCode.PermissionDenied,
+                "RBAC administrator privileges are required"));
+        }
+
+        // An absent HttpContext yields an anonymous principal, which the
+        // Administrator policy rejects on RequireAuthenticatedUser — the
+        // decision stays with the policy rather than being duplicated here.
+        var user = GetUser(context) ?? new ClaimsPrincipal(new ClaimsIdentity());
+
         var result = await _authorizationService.AuthorizeAsync(
-            context.GetHttpContext().User, resource: null, RbacAuthorizationPolicies.Administrator);
+            user, resource: null, RbacAuthorizationPolicies.Administrator);
         if (!result.Succeeded)
             throw new RpcException(new Status(StatusCode.PermissionDenied, "RBAC administrator privileges are required"));
     }

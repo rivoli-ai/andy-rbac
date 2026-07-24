@@ -42,14 +42,18 @@ public class RbacMcpTools
         _httpContextAccessor = httpContextAccessor;
     }
 
+    /// <summary>
+    /// Gates the mutating MCP tools on administrator status.
+    ///
+    /// Fails closed: a missing accessor denies rather than allows. It
+    /// previously returned early "to keep unit construction lightweight",
+    /// which meant the failure mode of a DI mistake was full administrative
+    /// access through the MCP surface rather than an outage. Tests supply an
+    /// explicit principal instead.
+    /// </summary>
     private void EnsureAdministrator()
     {
-        // The optional accessor keeps direct unit construction lightweight;
-        // production DI always registers it in Program.cs.
-        if (_httpContextAccessor is null)
-            return;
-
-        var user = _httpContextAccessor.HttpContext?.User;
+        var user = _httpContextAccessor?.HttpContext?.User;
         if (user is null || !RbacAuthorizationPolicies.IsAdministrator(user))
             throw new UnauthorizedAccessException("RBAC administrator privileges are required for this MCP tool.");
     }

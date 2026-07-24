@@ -1,6 +1,8 @@
+using System.Security.Claims;
 using Andy.Rbac.Api.Services;
 using FluentAssertions;
 using Grpc.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -317,8 +319,11 @@ public class RbacGrpcServiceTests
             .ReturnsAsync(new SubjectDetailResult(new SubjectDetail(
                 Guid.NewGuid(), "shared-id", "provider-a", "new@example.com", "New Name",
                 true, DateTimeOffset.UtcNow, [], [])));
+        // The admin guard fails closed, so this test must state the authority it
+        // assumes rather than relying on a null IAuthorizationService.
         var service = new RbacGrpcService(
-            _evaluatorMock.Object, _loggerMock.Object, subjectService: subjects.Object);
+            _evaluatorMock.Object, _loggerMock.Object, subjectService: subjects.Object,
+            authorizationService: PermissiveAuthorization());
         var request = new ProvisionSubjectReq
         {
             ExternalId = "shared-id",
@@ -338,6 +343,31 @@ public class RbacGrpcServiceTests
     private static ServerCallContext CreateServerCallContext()
     {
         return new TestServerCallContext();
+    }
+
+    /// <summary>An authorization service that grants every policy.</summary>
+    private static IAuthorizationService PermissiveAuthorization()
+    {
+        var mock = new Mock<IAuthorizationService>();
+        mock.Setup(x => x.AuthorizeAsync(
+                It.IsAny<ClaimsPrincipal>(), It.IsAny<object?>(), It.IsAny<string>()))
+            .ReturnsAsync(AuthorizationResult.Success());
+        return mock.Object;
+    }
+
+    [Fact]
+    public async Task MutatingRpc_WithoutAuthorizationService_IsDenied()
+    {
+        // Fails closed: the guard used to return early when the service was
+        // absent, so a DI mistake meant unauthenticated AssignRole/RevokeRole/
+        // ProvisionSubject rather than an outage.
+        var service = new RbacGrpcService(_evaluatorMock.Object, _loggerMock.Object);
+
+        var act = async () => await service.ProvisionSubject(
+            new ProvisionSubjectReq { ExternalId = "x", Provider = "p" }, CreateServerCallContext());
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
     }
 
     // Minimal implementation of ServerCallContext for testing
