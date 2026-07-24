@@ -154,6 +154,37 @@ andy-rbac check permission user-123 andy-tasks:goal:read
 
 Global flags: `--api-url` / `-u` (env `ANDY_RBAC_URL`), `--api-key` / `-k` (env `ANDY_RBAC_API_KEY`), `--output` / `-o`.
 
+### Authenticating the CLI
+
+The CLI sends its key as an `X-API-Key` header. Keys are minted against an
+existing subject and act as that subject:
+
+```bash
+# Mint a key (administrator only). The plaintext key is returned ONCE.
+curl -X POST https://localhost:5003/api/apikeys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"subjectExternalId":"admin-user","name":"laptop CLI"}'
+
+# => { "keyPrefix": "rbac_live_...", "key": "rbac_live_....<secret>", ... }
+
+export ANDY_RBAC_API_KEY='rbac_live_....<secret>'
+andy-rbac role list --application andy-tasks
+```
+
+Only a SHA-256 hash of the secret is stored, so a lost key cannot be recovered —
+mint a replacement and revoke the old one:
+
+```bash
+curl -X POST https://localhost:5003/api/apikeys/{id}/revoke -H "Authorization: Bearer $TOKEN"
+```
+
+A key presents its owner's roles, read from the RBAC store at authentication
+time. Passing `scopes` at creation narrows that set — the intersection of the
+declared scopes and the roles the owner actually holds — so a key can never
+carry more authority than its subject. Keys stop working immediately when
+revoked, when `expiresAt` passes, or when their owning subject is deactivated.
+
 ## MCP Tools
 
 The `andy-rbac` API exposes MCP tools for AI assistants. Read-only tools cover permission checks and the Policy catalog; write tools cover application/role/team/user management.

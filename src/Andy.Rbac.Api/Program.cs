@@ -58,6 +58,9 @@ builder.Services.AddScoped<IPermissionRepository, PermissionRepository>();
 
 // Add services
 builder.Services.AddScoped<IPermissionEvaluator, PermissionEvaluator>();
+// Gate for caller-asserted external groups (issue #45 follow-up): only the
+// subject itself or an active service principal may supply them.
+builder.Services.AddScoped<ICallerGroupsResolver, CallerGroupsResolver>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
@@ -123,7 +126,23 @@ var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"]
     ?? throw new InvalidOperationException("AndyAuth:Authority is required (set via ANDY_AUTH_AUTHORITY env var).");
 
 // Add authentication (integrate with andy-auth)
-builder.Services.AddAuthentication("Bearer")
+//
+// Two credential types reach this service: andy-auth bearer tokens (users and
+// M2M clients) and API keys (the andy-rbac CLI and automation). The default
+// scheme is a policy scheme that dispatches on the presence of the X-API-Key
+// header, so every endpoint accepts either without each one opting in. The
+// challenge scheme stays MCP (configured below) so OAuth clients still get a
+// correct 401 + resource metadata pointer.
+builder.Services.AddAuthentication(RbacAuthenticationSchemes.Default)
+    .AddPolicyScheme(RbacAuthenticationSchemes.Default, "Bearer token or API key", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+            context.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.HeaderName)
+                ? ApiKeyAuthenticationHandler.SchemeName
+                : "Bearer";
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.SchemeName, _ => { })
     .AddJwtBearer("Bearer", options =>
     {
         // Match the fallback chain used by `andyAuthAuthority` above
