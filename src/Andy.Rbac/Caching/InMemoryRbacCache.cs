@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Andy.Rbac.Abstractions;
@@ -16,6 +17,17 @@ namespace Andy.Rbac.Caching;
 /// monotonic generation counter is bumped by <see cref="InvalidateAllAsync"/>;
 /// every read/write composes the current generation into the key, so old
 /// entries become unreachable immediately (and expire on their own TTL).
+///
+/// Issue #110: this type is registered as a singleton and reached from
+/// concurrent requests, so the per-subject key index is a
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/> rather than a
+/// <see cref="HashSet{T}"/>, and its get-or-create is serialised. The previous
+/// unsynchronised version could corrupt the set, and enumerating it in
+/// <see cref="InvalidateAsync"/> while another request added to it threw
+/// "collection was modified". Its lifetime is also refreshed on every write —
+/// the index used to inherit the TTL of the *first* entry it tracked, so it
+/// could expire while entries were still live, at which point invalidation
+/// found nothing to remove and silently kept serving revoked permissions.
 /// </summary>
 public class InMemoryRbacCache : IRbacCache
 {
@@ -26,6 +38,13 @@ public class InMemoryRbacCache : IRbacCache
     private const string RolesCacheKeyPrefix = "rbac:roles";
     private const string SubjectIndexPrefix = "rbac:idx:sub:";
     private long _generation;
+
+    /// <summary>
+    /// Serialises index get-or-create. Without it two threads racing the first
+    /// write for a subject each create an index; one wins <c>Set</c> and the
+    /// other's keys are tracked on an orphan that invalidation never sees.
+    /// </summary>
+    private readonly object _indexLock = new();
 
     public InMemoryRbacCache(IMemoryCache cache, IOptions<RbacOptions> options)
     {
@@ -91,9 +110,11 @@ public class InMemoryRbacCache : IRbacCache
         // generation and remove them. Old-generation keys are already
         // unreachable from the current Get/Set path; they expire naturally.
         var indexKey = SubjectIndexKey(subjectId);
-        if (_cache.TryGetValue(indexKey, out HashSet<string>? keys) && keys is not null)
+        if (_cache.TryGetValue(indexKey, out ConcurrentDictionary<string, byte>? keys) && keys is not null)
         {
-            foreach (var k in keys) _cache.Remove(k);
+            // ConcurrentDictionary.Keys returns a snapshot, so a concurrent
+            // write during invalidation cannot throw here.
+            foreach (var k in keys.Keys) _cache.Remove(k);
             _cache.Remove(indexKey);
         }
         return Task.CompletedTask;
@@ -129,12 +150,20 @@ public class InMemoryRbacCache : IRbacCache
         // sweep every (applicationCode, groups) variant without scanning
         // the whole IMemoryCache.
         var indexKey = SubjectIndexKey(subjectId);
-        if (!_cache.TryGetValue(indexKey, out HashSet<string>? keys) || keys is null)
+        ConcurrentDictionary<string, byte> keys;
+
+        lock (_indexLock)
         {
-            keys = new HashSet<string>();
-            _cache.Set(indexKey, keys, _options.Expiration);
+            if (!_cache.TryGetValue(indexKey, out ConcurrentDictionary<string, byte>? existing) || existing is null)
+                existing = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+
+            // Re-Set on every track, not just on create: the index must outlive
+            // the newest entry it covers, or invalidation silently under-removes.
+            _cache.Set(indexKey, existing, _options.Expiration);
+            keys = existing;
         }
-        keys.Add(cacheKey);
+
+        keys.TryAdd(cacheKey, 0);
     }
 
     private static string HashGroups(IEnumerable<string>? groups)
