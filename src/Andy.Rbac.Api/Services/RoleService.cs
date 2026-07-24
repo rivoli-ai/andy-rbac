@@ -68,9 +68,27 @@ public class RoleService : IRoleService
         return role == null ? null : MapToDetailResult(role);
     }
 
+    /// <summary>
+    /// Reads a role by (code, applicationCode). Identity selection goes through
+    /// the shared <see cref="RoleResolver"/> so this endpoint applies the same
+    /// scoped-then-global precedence as assign/revoke and never silently binds
+    /// an arbitrary application's role when a bare code is ambiguous. Ambiguity
+    /// throws (surfaced as 400 listing the candidate applications) rather than
+    /// returning 404, matching the assign/revoke contract — "you must scope
+    /// this" and "no such role" are different answers.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The bare code matches roles in more than one scope.
+    /// </exception>
     public async Task<RoleDetailResult?> GetByCodeAsync(string code, string? applicationCode = null, CancellationToken ct = default)
     {
-        var query = _db.Roles
+        var (resolved, kind, error) = await RoleResolver.ResolveAsync(_db, code, applicationCode, ct);
+        if (kind == RoleResolutionErrorKind.Ambiguous)
+            throw new InvalidOperationException(error);
+        if (resolved == null)
+            return null;
+
+        var role = await _db.Roles
             .Include(r => r.Application)
             .Include(r => r.ParentRole)
             .Include(r => r.RolePermissions)
@@ -81,14 +99,8 @@ public class RoleService : IRoleService
             .ThenInclude(p => p.ResourceType)
             .ThenInclude(rt => rt.Application)
             .AsNoTracking()
-            .Where(r => r.Code == code);
+            .FirstOrDefaultAsync(r => r.Id == resolved.Id, ct);
 
-        if (!string.IsNullOrEmpty(applicationCode))
-        {
-            query = query.Where(r => r.Application != null && r.Application.Code == applicationCode);
-        }
-
-        var role = await query.FirstOrDefaultAsync(ct);
         return role == null ? null : MapToDetailResult(role);
     }
 
@@ -360,6 +372,28 @@ public class RoleService : IRoleService
     }
 
     public async Task<string> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default)
+        => await AssignToTeamWithExpiryAsync(teamCode, roleCode, resourceInstanceId: null, applicationCode, expiresAt: null, ct);
+
+    /// <summary>
+    /// Assigns a role to a team, mirroring <see cref="AssignToSubjectCoreAsync"/>.
+    ///
+    /// The subject-side path had three behaviours this one lacked: the
+    /// duplicate check ignored expiry (so an expired team grant could never be
+    /// renewed — it reported "already assigned" forever while
+    /// <c>PermissionRepository.GetEffectiveRoleIdsAsync</c> filtered it out as
+    /// dead); there was no way to scope a grant to a resource instance, even
+    /// though <c>ResourceInstanceId</c> is part of the
+    /// <c>(TeamId, RoleId, ResourceInstanceId)</c> unique index; and no
+    /// <c>RoleAssigned</c> event was published, leaving team grants invisible to
+    /// the outbox push pipeline.
+    /// </summary>
+    public async Task<string> AssignToTeamWithExpiryAsync(
+        string teamCode,
+        string roleCode,
+        string? resourceInstanceId,
+        string? applicationCode,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default)
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
@@ -369,10 +403,36 @@ public class RoleService : IRoleService
         if (role == null)
             return roleError!;
 
-        if (await _db.TeamRoles.AnyAsync(tr => tr.TeamId == team.Id && tr.RoleId == role.Id, ct))
+        var existing = await _db.TeamRoles.FirstOrDefaultAsync(
+            tr => tr.TeamId == team.Id && tr.RoleId == role.Id &&
+                tr.ResourceInstanceId == resourceInstanceId, ct);
+
+        var now = DateTimeOffset.UtcNow;
+        if (existing is not null && (existing.ExpiresAt is null || existing.ExpiresAt > now))
             return $"Role '{roleCode}' is already assigned to team";
 
-        _db.TeamRoles.Add(new TeamRole { TeamId = team.Id, RoleId = role.Id });
+        var assignment = existing ?? new TeamRole
+        {
+            Id = Guid.NewGuid(),
+            TeamId = team.Id,
+            RoleId = role.Id,
+            ResourceInstanceId = resourceInstanceId
+        };
+        assignment.ExpiresAt = expiresAt;
+        assignment.GrantedAt = now;
+        if (existing is null)
+            _db.TeamRoles.Add(assignment);
+
+        _events.TeamRoleAssigned(new TeamRoleAssigned(
+            AssignmentId: assignment.Id,
+            TeamId: team.Id,
+            TeamCode: team.Code,
+            RoleId: role.Id,
+            RoleCode: role.Code,
+            ResourceInstanceId: resourceInstanceId,
+            ExpiresAt: expiresAt,
+            OccurredAt: now));
+
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Assigned role {RoleCode} to team {TeamCode}", roleCode, teamCode);

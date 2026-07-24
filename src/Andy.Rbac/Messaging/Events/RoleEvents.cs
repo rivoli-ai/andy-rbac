@@ -57,3 +57,33 @@ public sealed record RoleRevoked(
     string? ResourceInstanceId,
     DateTimeOffset OccurredAt
 );
+
+// Per-team role grant/revoke. Subject scheme:
+//   andy.rbac.events.team_role.{assignment_id}.{kind}
+//
+// Distinct from subject_role rather than reusing it: a team grant reaches every
+// current AND future member, so a consumer holding a per-subject projection
+// must re-expand the team's membership rather than record one identity. Sending
+// these as subject_role events with the team id in SubjectId would have
+// consumers register a subject that does not exist.
+
+public sealed record TeamRoleAssigned(
+    Guid AssignmentId,
+    Guid TeamId,
+    string TeamCode,
+    Guid RoleId,
+    string RoleCode,
+    string? ResourceInstanceId,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset OccurredAt
+);
+
+public sealed record TeamRoleRevoked(
+    Guid AssignmentId,
+    Guid TeamId,
+    string TeamCode,
+    Guid RoleId,
+    string RoleCode,
+    string? ResourceInstanceId,
+    DateTimeOffset OccurredAt
+);
