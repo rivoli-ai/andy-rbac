@@ -122,7 +122,7 @@ public class RoleResolverGlobalScopeTests
             subject.ExternalId, "super-admin", resourceInstanceId: null,
             applicationCode: "test-app", expiresAt: null);
 
-        result.Should().NotStartWith("Error:");
+        result.Message.Should().NotStartWith("Error:");
         (await context.SubjectRoles
             .AnyAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == global.Id))
             .Should().BeTrue();

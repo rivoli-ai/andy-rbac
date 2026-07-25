@@ -11,6 +11,7 @@ using Andy.Rbac.Messaging;
 using Andy.Telemetry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore.Authentication;
 using OpenTelemetry.Trace;
@@ -73,6 +74,17 @@ builder.Services.AddScoped<IResourceInstanceService, ResourceInstanceService>();
 builder.Services.Configure<GrantExpiryWorkerOptions>(
     builder.Configuration.GetSection(GrantExpiryWorkerOptions.SectionName));
 builder.Services.AddHostedService<GrantExpiryWorker>();
+
+// Buffered permission-check auditing (#124). The sink is a singleton the
+// evaluator writes to without touching the database; RbacAuditWriter drains it
+// in batches off the request path.
+builder.Services.Configure<RbacAuditOptions>(
+    builder.Configuration.GetSection(RbacAuditOptions.SectionName));
+builder.Services.AddSingleton<ChannelRbacAuditSink>(sp => new ChannelRbacAuditSink(
+    sp.GetRequiredService<IOptions<RbacAuditOptions>>().Value,
+    sp.GetRequiredService<ILogger<ChannelRbacAuditSink>>()));
+builder.Services.AddSingleton<IRbacAuditSink>(sp => sp.GetRequiredService<ChannelRbacAuditSink>());
+builder.Services.AddHostedService<RbacAuditWriter>();
 
 // Epic AL — NATS messaging substrate.
 //

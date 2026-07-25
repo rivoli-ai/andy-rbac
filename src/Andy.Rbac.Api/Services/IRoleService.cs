@@ -10,19 +10,19 @@ public interface IRoleService
     Task<RoleDetailResult?> GetByCodeAsync(string code, string? applicationCode = null, CancellationToken ct = default);
     Task<RoleDetailResult> CreateAsync(CreateRoleRequest request, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
-    Task<string> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
-    Task<string> AssignToSubjectWithExpiryAsync(string subjectExternalId, string roleCode, string? resourceInstanceId, string? applicationCode, DateTimeOffset? expiresAt, CancellationToken ct = default);
-    Task<string> AssignToSubjectForProviderWithExpiryAsync(string subjectExternalId, string subjectProvider, string roleCode, string? resourceInstanceId, string? applicationCode, DateTimeOffset? expiresAt, CancellationToken ct = default);
-    Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
-    Task<string> RevokeFromSubjectForProviderAsync(string subjectExternalId, string subjectProvider, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
-    Task<string> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default);
+    Task<MutationResult> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
+    Task<MutationResult> AssignToSubjectWithExpiryAsync(string subjectExternalId, string roleCode, string? resourceInstanceId, string? applicationCode, DateTimeOffset? expiresAt, CancellationToken ct = default);
+    Task<MutationResult> AssignToSubjectForProviderWithExpiryAsync(string subjectExternalId, string subjectProvider, string roleCode, string? resourceInstanceId, string? applicationCode, DateTimeOffset? expiresAt, CancellationToken ct = default);
+    Task<MutationResult> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
+    Task<MutationResult> RevokeFromSubjectForProviderAsync(string subjectExternalId, string subjectProvider, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
+    Task<MutationResult> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default);
 
     /// <summary>
     /// Team-role assignment with the same semantics as the subject-side path:
     /// renews an expired grant rather than reporting it as already assigned,
     /// supports instance-scoped grants, and publishes a team_role event.
     /// </summary>
-    Task<string> AssignToTeamWithExpiryAsync(
+    Task<MutationResult> AssignToTeamWithExpiryAsync(
         string teamCode,
         string roleCode,
         string? resourceInstanceId,

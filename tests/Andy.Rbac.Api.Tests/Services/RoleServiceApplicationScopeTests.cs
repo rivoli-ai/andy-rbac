@@ -72,7 +72,7 @@ public class RoleServiceApplicationScopeTests
         var result = await service.AssignToSubjectAsync("no-role-user", "admin", applicationCode: "app-b");
 
         // Assert — the assignment must reference app-b's role, not test-app's.
-        result.Should().StartWith("Successfully assigned");
+        result.Message.Should().StartWith("Successfully assigned");
         var assignment = await context.SubjectRoles.SingleAsync(sr => sr.SubjectId == NoRoleUserId);
         assignment.RoleId.Should().Be(AppBRoleId, "the caller asked for app-b's admin role");
         assignment.RoleId.Should().NotBe(AppARoleId);
@@ -89,10 +89,10 @@ public class RoleServiceApplicationScopeTests
         var result = await service.AssignToSubjectAsync("no-role-user", "admin");
 
         // Assert — must refuse, listing the candidate applications, and assign nothing.
-        result.Should().StartWith("Error:");
-        result.Should().Contain("ambiguous");
-        result.Should().Contain("test-app");
-        result.Should().Contain("app-b");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("ambiguous");
+        result.Message.Should().Contain("test-app");
+        result.Message.Should().Contain("app-b");
         (await context.SubjectRoles.AnyAsync(sr => sr.SubjectId == NoRoleUserId)).Should().BeFalse(
             "an ambiguous request must never silently pick an application's role");
     }
@@ -106,7 +106,7 @@ public class RoleServiceApplicationScopeTests
 
         var result = await service.AssignToSubjectAsync("no-role-user", "editor");
 
-        result.Should().StartWith("Successfully assigned");
+        result.Message.Should().StartWith("Successfully assigned");
     }
 
     [Fact]
@@ -118,8 +118,8 @@ public class RoleServiceApplicationScopeTests
 
         var result = await service.AssignToSubjectAsync("no-role-user", "editor", applicationCode: "app-b");
 
-        result.Should().StartWith("Error:");
-        result.Should().Contain("app-b");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("app-b");
         (await context.SubjectRoles.AnyAsync(sr => sr.SubjectId == NoRoleUserId)).Should().BeFalse();
     }
 
@@ -138,7 +138,7 @@ public class RoleServiceApplicationScopeTests
         var result = await service.RevokeFromSubjectAsync("no-role-user", "admin", applicationCode: "app-b");
 
         // Assert — app-b assignment gone, test-app assignment untouched.
-        result.Should().StartWith("Successfully revoked");
+        result.Message.Should().StartWith("Successfully revoked");
         var remaining = await context.SubjectRoles
             .Where(sr => sr.SubjectId == NoRoleUserId)
             .Select(sr => sr.RoleId)
@@ -161,8 +161,8 @@ public class RoleServiceApplicationScopeTests
         var result = await service.RevokeFromSubjectAsync("no-role-user", "admin");
 
         // Assert — must refuse and revoke nothing.
-        result.Should().StartWith("Error:");
-        result.Should().Contain("ambiguous");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("ambiguous");
         (await context.SubjectRoles.CountAsync(sr => sr.SubjectId == NoRoleUserId)).Should().Be(2);
     }
 }

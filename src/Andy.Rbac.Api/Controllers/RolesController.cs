@@ -137,10 +137,11 @@ public class RolesController : ControllerBase
                 request.SubjectExternalId, request.SubjectProvider, request.RoleCode,
                 request.ResourceInstanceId, request.ApplicationCode, request.ExpiresAt, ct);
 
-        if (result.StartsWith("Error:"))
-            return BadRequest(result);
-
-        return Ok(result);
+        // Status derives from the typed outcome, not from the message text.
+        // The mapping is intentionally unchanged from the string-prefix era —
+        // refining it (404 for not-found, 409 for conflicts) is an API change
+        // that belongs in its own commit.
+        return result.Succeeded ? Ok(result.Message) : BadRequest(result.Message);
     }
 
     /// <summary>
@@ -159,10 +160,11 @@ public class RolesController : ControllerBase
                 request.SubjectExternalId, request.SubjectProvider, request.RoleCode,
                 request.ResourceInstanceId, request.ApplicationCode, ct);
 
-        if (result.StartsWith("Error:"))
-            return BadRequest(result);
-
-        return Ok(result);
+        // Status derives from the typed outcome, not from the message text.
+        // The mapping is intentionally unchanged from the string-prefix era —
+        // refining it (404 for not-found, 409 for conflicts) is an API change
+        // that belongs in its own commit.
+        return result.Succeeded ? Ok(result.Message) : BadRequest(result.Message);
     }
 }
 

@@ -375,7 +375,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _roleServiceMock
             .Setup(x => x.AssignToSubjectAsync("user-123", "admin", null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully assigned role 'admin' to user-123");
+            .ReturnsAsync(MutationResult.Ok("Successfully assigned role 'admin' to user-123"));
 
         // Act
         var result = await tools.AssignRoleToUser("user-123", "admin");
@@ -394,7 +394,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _roleServiceMock
             .Setup(x => x.RevokeFromSubjectAsync("user-123", "admin", null, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully revoked role 'admin' from user-123");
+            .ReturnsAsync(MutationResult.Ok("Successfully revoked role 'admin' from user-123"));
 
         // Act
         var result = await tools.RevokeRoleFromUser("user-123", "admin");
@@ -462,7 +462,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _teamServiceMock
             .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully added user-123 to team-1 as Member");
+            .ReturnsAsync(MutationResult.Ok("Successfully added user-123 to team-1 as Member"));
 
         // Act
         var result = await tools.AddUserToTeam("team-1", "user-123", "Member");
@@ -478,7 +478,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _teamServiceMock
             .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully added user-123 to team-1 as Admin");
+            .ReturnsAsync(MutationResult.Ok("Successfully added user-123 to team-1 as Admin"));
 
         // Act
         var result = await tools.AddUserToTeam("team-1", "user-123", "Admin");
@@ -496,7 +496,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _teamServiceMock
             .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully added user-123 to team-1 as Member");
+            .ReturnsAsync(MutationResult.Ok("Successfully added user-123 to team-1 as Member"));
 
         // Act
         var result = await tools.AddUserToTeam("team-1", "user-123", "InvalidRole");
@@ -514,7 +514,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _roleServiceMock
             .Setup(x => x.AssignToTeamAsync("team-1", "editor", null, It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully assigned role 'editor' to team team-1");
+            .ReturnsAsync(MutationResult.Ok("Successfully assigned role 'editor' to team team-1"));
 
         // Act
         var result = await tools.AssignRoleToTeam("team-1", "editor");
@@ -530,7 +530,7 @@ public class RbacMcpToolsTests
         var tools = CreateTools();
         _roleServiceMock
             .Setup(x => x.AssignToTeamAsync("team-1", "admin", "app-b", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("Successfully assigned role 'admin' to team 'team-1'");
+            .ReturnsAsync(MutationResult.Ok("Successfully assigned role 'admin' to team 'team-1'"));
 
         // Act
         var result = await tools.AssignRoleToTeam("team-1", "admin", "app-b");

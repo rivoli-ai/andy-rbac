@@ -203,12 +203,12 @@ public class RbacMcpTools
         [Description("Identity provider (required when the external ID exists in multiple providers)")] string? subjectProvider = null)
     {
         await EnsureAdministratorAsync();
-        var message = string.IsNullOrWhiteSpace(subjectProvider)
+        var result = string.IsNullOrWhiteSpace(subjectProvider)
             ? await _roleService.AssignToSubjectAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode)
             : await _roleService.AssignToSubjectForProviderWithExpiryAsync(
                 subjectExternalId, subjectProvider, roleCode, resourceInstanceId, applicationCode, expiresAt: null);
-        _logger.LogInformation("MCP: {Message}", message);
-        return message;
+        _logger.LogInformation("MCP: {Message}", result.Message);
+        return result.Message;
     }
 
     [McpServerTool]
@@ -221,12 +221,12 @@ public class RbacMcpTools
         [Description("Identity provider (required when the external ID exists in multiple providers)")] string? subjectProvider = null)
     {
         await EnsureAdministratorAsync();
-        var message = string.IsNullOrWhiteSpace(subjectProvider)
+        var result = string.IsNullOrWhiteSpace(subjectProvider)
             ? await _roleService.RevokeFromSubjectAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode)
             : await _roleService.RevokeFromSubjectForProviderAsync(
                 subjectExternalId, subjectProvider, roleCode, resourceInstanceId, applicationCode);
-        _logger.LogInformation("MCP: {Message}", message);
-        return message;
+        _logger.LogInformation("MCP: {Message}", result.Message);
+        return result.Message;
     }
 
     // ==================== Team Management ====================
@@ -269,9 +269,9 @@ public class RbacMcpTools
         if (!Enum.TryParse<TeamMembershipRole>(membershipRole, true, out var role))
             role = TeamMembershipRole.Member;
 
-        var message = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role, subjectProvider);
-        _logger.LogInformation("MCP: {Message}", message);
-        return message;
+        var result = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role, subjectProvider);
+        _logger.LogInformation("MCP: {Message}", result.Message);
+        return result.Message;
     }
 
     [McpServerTool]
@@ -282,9 +282,9 @@ public class RbacMcpTools
         [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null)
     {
         await EnsureAdministratorAsync();
-        var message = await _roleService.AssignToTeamAsync(teamCode, roleCode, applicationCode);
-        _logger.LogInformation("MCP: {Message}", message);
-        return message;
+        var result = await _roleService.AssignToTeamAsync(teamCode, roleCode, applicationCode);
+        _logger.LogInformation("MCP: {Message}", result.Message);
+        return result.Message;
     }
 
     // ==================== User Management ====================

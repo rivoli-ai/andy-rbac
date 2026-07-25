@@ -72,7 +72,7 @@ public class RbacEventPublisherTests
             subjectExternalId: "no-role-user",
             roleCode: "viewer");
 
-        msg.Should().StartWith("Successfully assigned");
+        msg.Message.Should().StartWith("Successfully assigned");
         var entry = await context.Outbox
             .Where(e => e.Subject.Contains(".subject_role."))
             .SingleAsync();
@@ -90,7 +90,7 @@ public class RbacEventPublisherTests
 
         var msg = await service.RevokeFromSubjectAsync("no-role-user", "viewer");
 
-        msg.Should().StartWith("Successfully revoked");
+        msg.Message.Should().StartWith("Successfully revoked");
         var entries = await context.Outbox
             .Where(e => e.Subject.Contains(".subject_role."))
             .OrderBy(e => e.CreatedAt)
