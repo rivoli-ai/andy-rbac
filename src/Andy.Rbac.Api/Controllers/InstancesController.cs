@@ -24,7 +24,8 @@ public sealed class InstancesController : ControllerBase
     public async Task<IActionResult> Remove(
         string resourceTypeCode, string resourceInstanceId,
         [FromQuery] string applicationCode, CancellationToken ct)
-        => ToActionResult(await _service.RemoveAsync(applicationCode, resourceTypeCode, resourceInstanceId, ct));
+        => ToActionResult(await _service.RemoveAsync(
+            applicationCode, resourceTypeCode, resourceInstanceId, ActingPrincipal, ct));
 
     [HttpPost("permissions")]
     public async Task<IActionResult> Grant(GrantInstancePermissionRequest request, CancellationToken ct)
@@ -37,7 +38,14 @@ public sealed class InstancesController : ControllerBase
         string resourceTypeCode, string resourceInstanceId, string subjectId, string action,
         [FromQuery] string applicationCode, [FromQuery] string? subjectProvider, CancellationToken ct)
         => ToActionResult(await _service.RevokeAsync(
-            applicationCode, resourceTypeCode, resourceInstanceId, subjectId, subjectProvider, action, ct));
+            applicationCode, resourceTypeCode, resourceInstanceId, subjectId, subjectProvider, action,
+            ActingPrincipal, ct));
+
+    /// <summary>
+    /// External ID of the caller, recorded as <c>RevokedByPrincipal</c> on the
+    /// grant lifecycle events these endpoints stage.
+    /// </summary>
+    private string? ActingPrincipal => TrustedCallerIdentity.SubjectId(User);
 
     private IActionResult ToActionResult(ResourceInstanceMutationResult result, bool created = false)
     {

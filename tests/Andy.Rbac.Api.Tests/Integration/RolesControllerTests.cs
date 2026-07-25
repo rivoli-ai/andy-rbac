@@ -72,16 +72,31 @@ public class RolesControllerTests : IClassFixture<RbacWebApplicationFactory>
     }
 
     [Fact]
-    public async Task GetRoleByCode_WithValidCode_ReturnsRole()
+    public async Task GetRoleByCode_WithValidScopedCode_ReturnsRole()
     {
-        // Act
-        var response = await _client.GetAsync("/api/roles/by-code/admin");
+        // "admin" exists in many seeded applications, so it must be scoped.
+        // This assertion previously used the bare code and passed only because
+        // the lookup silently bound whichever row matched first — the same
+        // defect #86 fixed for assign/revoke.
+        var response = await _client.GetAsync("/api/roles/by-code/admin?applicationCode=test-app");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var role = await response.Content.ReadFromJsonAsync<RoleDetail>(TestJsonOptions.Default);
         role.Should().NotBeNull();
         role!.Code.Should().Be("admin");
+        role.ApplicationCode.Should().Be("test-app");
+    }
+
+    [Fact]
+    public async Task GetRoleByCode_WithAmbiguousBareCode_ReturnsBadRequest()
+    {
+        // Act — "admin" is seeded for several applications.
+        var response = await _client.GetAsync("/api/roles/by-code/admin");
+
+        // Assert — must not silently bind an arbitrary application's role.
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("ambiguous");
     }
 
     [Fact]

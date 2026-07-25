@@ -1,7 +1,10 @@
+using System.Security.Claims;
+using Andy.Rbac.Api.Authorization;
 using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Models;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -18,7 +21,40 @@ public class RbacMcpToolsTests
     private readonly Mock<IPolicyService> _policyServiceMock = new();
     private readonly Mock<ILogger<RbacMcpTools>> _loggerMock = new();
 
-    private RbacMcpTools CreateTools()
+    /// <summary>
+    /// An accessor carrying the given principal. The admin guard fails closed,
+    /// so tests exercising mutating tools must state the authority they assume
+    /// rather than inheriting it from a null accessor.
+    /// </summary>
+    private static IHttpContextAccessor AccessorFor(params string[] roles)
+    {
+        var claims = roles.Select(role => new Claim(ClaimTypes.Role, role));
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"))
+        };
+        return new HttpContextAccessor { HttpContext = context };
+    }
+
+    /// <summary>
+    /// Stands in for the store-backed <see cref="IAdministratorAuthority"/>,
+    /// deciding from the principal's role claims. Mirrors the real bootstrap
+    /// path closely enough to exercise the guard without a database.
+    /// </summary>
+    private static IAdministratorAuthority AuthorityFromClaims()
+    {
+        var mock = new Mock<IAdministratorAuthority>();
+        mock.Setup(x => x.IsAdministratorAsync(It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ClaimsPrincipal user, CancellationToken _) =>
+                user.FindAll(ClaimTypes.Role).Any(c =>
+                    c.Value is "super-admin" or "admin"));
+        return mock.Object;
+    }
+
+    private RbacMcpTools CreateTools(
+        IHttpContextAccessor? accessor = null,
+        IAdministratorAuthority? authority = null,
+        bool omitAuthority = false)
     {
         return new RbacMcpTools(
             _evaluatorMock.Object,
@@ -27,7 +63,57 @@ public class RbacMcpToolsTests
             _teamServiceMock.Object,
             _subjectServiceMock.Object,
             _policyServiceMock.Object,
-            _loggerMock.Object);
+            _loggerMock.Object,
+            accessor ?? AccessorFor("super-admin"),
+            omitAuthority ? null : authority ?? AuthorityFromClaims());
+    }
+
+    // ==================== Administrator guard ====================
+
+    [Fact]
+    public async Task MutatingTool_WithNoHttpContext_IsDenied()
+    {
+        // The guard used to return early when the accessor was absent, so a DI
+        // mistake would have opened every mutating tool instead of breaking it.
+        var tools = CreateTools(accessor: new HttpContextAccessor { HttpContext = null });
+
+        var act = async () => await tools.CreateApplication("new-app", "New App", null);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task MutatingTool_WithNonAdministratorPrincipal_IsDenied()
+    {
+        var tools = CreateTools(AccessorFor("viewer"));
+
+        var act = async () => await tools.AssignRoleToUser("user-123", "admin");
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task MutatingTool_WithNoAdministratorAuthority_IsDenied()
+    {
+        // Fails closed on a missing dependency, not open (#112, #114).
+        var tools = CreateTools(AccessorFor("super-admin"), omitAuthority: true);
+
+        var act = async () => await tools.CreateApplication("new-app", "New App", null);
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task ReadOnlyTool_DoesNotRequireAdministrator()
+    {
+        var tools = CreateTools(AccessorFor("viewer"));
+        _evaluatorMock
+            .Setup(x => x.CheckPermissionAsync("user-123", "app:doc:read", It.IsAny<IEnumerable<string>?>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PermissionCheckResult(true));
+
+        var result = await tools.CheckPermission("user-123", "app:doc:read");
+
+        result.Allowed.Should().BeTrue();
     }
 
     // ==================== Permission Checking Tests ====================
@@ -375,7 +461,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _teamServiceMock
-            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully added user-123 to team-1 as Member");
 
         // Act
@@ -391,7 +477,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _teamServiceMock
-            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully added user-123 to team-1 as Admin");
 
         // Act
@@ -399,7 +485,7 @@ public class RbacMcpToolsTests
 
         // Assert
         _teamServiceMock.Verify(
-            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, It.IsAny<CancellationToken>()),
+            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -409,7 +495,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _teamServiceMock
-            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully added user-123 to team-1 as Member");
 
         // Act
@@ -417,7 +503,7 @@ public class RbacMcpToolsTests
 
         // Assert
         _teamServiceMock.Verify(
-            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, It.IsAny<CancellationToken>()),
+            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

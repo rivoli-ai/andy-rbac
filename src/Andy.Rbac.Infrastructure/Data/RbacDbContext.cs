@@ -138,6 +138,24 @@ public class RbacDbContext : DbContext
             entity.Property(e => e.Code).HasMaxLength(100).IsRequired();
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.HasIndex(e => new { e.ApplicationId, e.Code }).IsUnique();
+
+            // The composite index above does NOT constrain global roles.
+            // Postgres treats NULLs as distinct in a unique index, so
+            // (NULL, 'super-admin') is insertable any number of times, and the
+            // only thing preventing it was an in-code guard in the seeder.
+            // Duplicates are not merely untidy: RoleResolver then reports the
+            // code ambiguous forever, making it permanently unassignable — a
+            // self-inflicted denial of service on super-admin. A filtered index
+            // closes the gap where the composite one cannot.
+            // Postgres-only; SQLite / InMemory keep the composite index alone.
+            if (Database.IsNpgsql())
+            {
+                entity.HasIndex(e => e.Code)
+                    .IsUnique()
+                    .HasFilter("\"ApplicationId\" IS NULL")
+                    .HasDatabaseName("IX_roles_Code_global_unique");
+            }
+
             entity.HasOne(e => e.Application)
                 .WithMany(a => a.Roles)
                 .HasForeignKey(e => e.ApplicationId)

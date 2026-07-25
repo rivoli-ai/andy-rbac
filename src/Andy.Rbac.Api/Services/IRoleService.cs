@@ -16,6 +16,19 @@ public interface IRoleService
     Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
     Task<string> RevokeFromSubjectForProviderAsync(string subjectExternalId, string subjectProvider, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default);
     Task<string> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Team-role assignment with the same semantics as the subject-side path:
+    /// renews an expired grant rather than reporting it as already assigned,
+    /// supports instance-scoped grants, and publishes a team_role event.
+    /// </summary>
+    Task<string> AssignToTeamWithExpiryAsync(
+        string teamCode,
+        string roleCode,
+        string? resourceInstanceId,
+        string? applicationCode,
+        DateTimeOffset? expiresAt,
+        CancellationToken ct = default);
 }
 
 public record RoleDetail(

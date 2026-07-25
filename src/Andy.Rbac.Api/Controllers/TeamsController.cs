@@ -150,7 +150,18 @@ public class TeamsController : ControllerBase
         };
 
         _db.Teams.Add(team);
-        await _db.SaveChangesAsync(ct);
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            // The pre-check above is a fast path, not a lock — two concurrent
+            // creates of the same code both pass it and one hits the unique
+            // index. Report the conflict rather than a 500.
+            return Conflict($"Team with code '{request.Code}' already exists");
+        }
 
         _logger.LogInformation("Created team {TeamCode}", team.Code);
 

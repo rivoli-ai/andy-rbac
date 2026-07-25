@@ -25,6 +25,21 @@ public interface IGrantService
     /// Returns the count of grants swept.
     /// </summary>
     Task<int> SweepExpiredGrantsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Sweeps expired SubjectRole and TeamRole assignments, emitting
+    /// subject_role.expired / team_role.expired for each, and removes them.
+    /// Returns the total count swept.
+    ///
+    /// Issue #121: only InstancePermission was ever swept. Role assignments
+    /// were honoured lazily — PermissionRepository filters expired ones at
+    /// evaluation time — but nothing announced the lapse, so a consumer
+    /// holding cached permissions kept authorising until its own TTL ran out,
+    /// and the dead rows accumulated indefinitely. Expired assignments are
+    /// deleted rather than retained, matching the instance-grant path; the
+    /// audit log records the lifecycle.
+    /// </summary>
+    Task<int> SweepExpiredRoleAssignmentsAsync(CancellationToken ct = default);
 }
 
 public record RevokeGrantResult(bool Found, Guid? GrantId, string? Principal, string? PermissionCode);

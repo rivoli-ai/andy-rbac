@@ -21,6 +21,7 @@ public class RbacMcpTools
     private readonly IPolicyService _policyService;
     private readonly ILogger<RbacMcpTools> _logger;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IAdministratorAuthority? _administratorAuthority;
 
     public RbacMcpTools(
         IPermissionEvaluator evaluator,
@@ -30,8 +31,10 @@ public class RbacMcpTools
         ISubjectService subjectService,
         IPolicyService policyService,
         ILogger<RbacMcpTools> logger,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        IAdministratorAuthority? administratorAuthority = null)
     {
+        _administratorAuthority = administratorAuthority;
         _evaluator = evaluator;
         _applicationService = applicationService;
         _roleService = roleService;
@@ -42,16 +45,24 @@ public class RbacMcpTools
         _httpContextAccessor = httpContextAccessor;
     }
 
-    private void EnsureAdministrator()
+    /// <summary>
+    /// Gates the mutating MCP tools on administrator status, using the same
+    /// store-backed authority as the REST and gRPC surfaces (#114).
+    ///
+    /// Fails closed: a missing accessor or authority denies rather than
+    /// allows. It previously returned early "to keep unit construction
+    /// lightweight", which meant the failure mode of a DI mistake was full
+    /// administrative access through the MCP surface rather than an outage.
+    /// </summary>
+    private async Task EnsureAdministratorAsync()
     {
-        // The optional accessor keeps direct unit construction lightweight;
-        // production DI always registers it in Program.cs.
-        if (_httpContextAccessor is null)
-            return;
-
-        var user = _httpContextAccessor.HttpContext?.User;
-        if (user is null || !RbacAuthorizationPolicies.IsAdministrator(user))
+        var user = _httpContextAccessor?.HttpContext?.User;
+        if (user is null
+            || _administratorAuthority is null
+            || !await _administratorAuthority.IsAdministratorAsync(user))
+        {
             throw new UnauthorizedAccessException("RBAC administrator privileges are required for this MCP tool.");
+        }
     }
 
     // ==================== Permission Checking ====================
@@ -148,7 +159,7 @@ public class RbacMcpTools
         [Description("Display name")] string name,
         [Description("Optional description")] string? description = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var result = await _applicationService.CreateAsync(new CreateApplicationRequest(code, name, description));
         var app = result.Application;
         _logger.LogInformation("MCP: Created application {AppCode}", code);
@@ -175,7 +186,7 @@ public class RbacMcpTools
         [Description("Optional application code to scope the role")] string? applicationCode = null,
         [Description("Optional parent role code for inheritance")] string? parentRoleCode = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var result = await _roleService.CreateAsync(new CreateRoleRequest(code, name, description, applicationCode, parentRoleCode));
         var role = result.Role;
         _logger.LogInformation("MCP: Created role {RoleCode}", code);
@@ -191,7 +202,7 @@ public class RbacMcpTools
         [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null,
         [Description("Identity provider (required when the external ID exists in multiple providers)")] string? subjectProvider = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var message = string.IsNullOrWhiteSpace(subjectProvider)
             ? await _roleService.AssignToSubjectAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode)
             : await _roleService.AssignToSubjectForProviderWithExpiryAsync(
@@ -209,7 +220,7 @@ public class RbacMcpTools
         [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null,
         [Description("Identity provider (required when the external ID exists in multiple providers)")] string? subjectProvider = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var message = string.IsNullOrWhiteSpace(subjectProvider)
             ? await _roleService.RevokeFromSubjectAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode)
             : await _roleService.RevokeFromSubjectForProviderAsync(
@@ -239,7 +250,7 @@ public class RbacMcpTools
         [Description("Optional parent team code for hierarchy")] string? parentTeamCode = null,
         [Description("Optional application code to scope the team")] string? applicationCode = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var result = await _teamService.CreateAsync(new CreateTeamRequest(code, name, description, parentTeamCode, applicationCode));
         var team = result.Team;
         _logger.LogInformation("MCP: Created team {TeamCode}", code);
@@ -251,13 +262,14 @@ public class RbacMcpTools
     public async Task<string> AddUserToTeam(
         [Description("Team code")] string teamCode,
         [Description("External ID of the user")] string subjectExternalId,
-        [Description("Membership role: Member, Admin, or Owner")] string membershipRole = "Member")
+        [Description("Membership role: Member, Admin, or Owner")] string membershipRole = "Member",
+        [Description("Identity provider, required when the external ID is ambiguous")] string? subjectProvider = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         if (!Enum.TryParse<TeamMembershipRole>(membershipRole, true, out var role))
             role = TeamMembershipRole.Member;
 
-        var message = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role);
+        var message = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role, subjectProvider);
         _logger.LogInformation("MCP: {Message}", message);
         return message;
     }
@@ -269,7 +281,7 @@ public class RbacMcpTools
         [Description("Role code to assign")] string roleCode,
         [Description("Application code the role belongs to (required when the role code exists in multiple applications)")] string? applicationCode = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var message = await _roleService.AssignToTeamAsync(teamCode, roleCode, applicationCode);
         _logger.LogInformation("MCP: {Message}", message);
         return message;
@@ -316,7 +328,7 @@ public class RbacMcpTools
         [Description("Optional email address")] string? email = null,
         [Description("Optional display name")] string? displayName = null)
     {
-        EnsureAdministrator();
+        await EnsureAdministratorAsync();
         var result = await _subjectService.CreateAsync(new CreateSubjectRequest(externalId, provider, email, displayName));
         var subject = result.Subject;
         _logger.LogInformation("MCP: Created user {ExternalId}", externalId);

@@ -1,5 +1,7 @@
 using Andy.Rbac.Infrastructure.Data;
 using Andy.Rbac.Api.Authorization;
+using Andy.Rbac.Messaging;
+using Andy.Rbac.Messaging.Events;
 using Andy.Rbac.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,13 +18,32 @@ namespace Andy.Rbac.Api.Controllers;
 public class SubjectsController : ControllerBase
 {
     private readonly RbacDbContext _db;
+    private readonly IRbacEventPublisher _events;
     private readonly ILogger<SubjectsController> _logger;
 
-    public SubjectsController(RbacDbContext db, ILogger<SubjectsController> logger)
+    public SubjectsController(
+        RbacDbContext db,
+        IRbacEventPublisher events,
+        ILogger<SubjectsController> logger)
     {
         _db = db;
+        _events = events;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Stages the subject-level invalidation push. Deactivation denies at check
+    /// time immediately, but consumers holding cached permissions kept
+    /// authorising the subject until their own TTL lapsed (#109). Staged on the
+    /// same context so it commits with the deactivation or not at all.
+    /// </summary>
+    private void StageDeactivation(Subject subject) =>
+        _events.SubjectDeactivated(new SubjectDeactivated(
+            SubjectId: subject.Id,
+            SubjectExternalId: subject.ExternalId,
+            Provider: subject.Provider,
+            DeactivatedByPrincipal: TrustedCallerIdentity.SubjectId(User),
+            OccurredAt: DateTimeOffset.UtcNow));
 
     /// <summary>
     /// Searches for subjects.
@@ -185,8 +206,17 @@ public class SubjectsController : ControllerBase
 
         if (request.Email != null) subject.Email = request.Email;
         if (request.DisplayName != null) subject.DisplayName = request.DisplayName;
-        if (request.IsActive.HasValue) subject.IsActive = request.IsActive.Value;
         if (request.Metadata != null) subject.Metadata = request.Metadata;
+
+        // Deactivating through the update endpoint is the same fact as hitting
+        // /deactivate, so it emits the same push. Only on the transition — a
+        // no-op write must not announce anything.
+        if (request.IsActive.HasValue && request.IsActive.Value != subject.IsActive)
+        {
+            subject.IsActive = request.IsActive.Value;
+            if (!subject.IsActive)
+                StageDeactivation(subject);
+        }
 
         await _db.SaveChangesAsync(ct);
 
@@ -206,10 +236,13 @@ public class SubjectsController : ControllerBase
         if (subject == null)
             return NotFound();
 
-        subject.IsActive = false;
-        await _db.SaveChangesAsync(ct);
-
-        _logger.LogInformation("Deactivated subject {SubjectId}", subject.ExternalId);
+        if (subject.IsActive)
+        {
+            subject.IsActive = false;
+            StageDeactivation(subject);
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Deactivated subject {SubjectId}", subject.ExternalId);
+        }
 
         return NoContent();
     }

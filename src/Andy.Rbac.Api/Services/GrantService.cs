@@ -119,4 +119,62 @@ public sealed class GrantService : IGrantService
 
         return expired.Count;
     }
+
+    /// <inheritdoc/>
+    public async Task<int> SweepExpiredRoleAssignmentsAsync(CancellationToken ct = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        var expiredSubjectRoles = await _db.SubjectRoles
+            .Include(sr => sr.Subject)
+            .Include(sr => sr.Role)
+            .Where(sr => sr.ExpiresAt != null && sr.ExpiresAt <= now)
+            .ToListAsync(ct);
+
+        var expiredTeamRoles = await _db.TeamRoles
+            .Include(tr => tr.Team)
+            .Include(tr => tr.Role)
+            .Where(tr => tr.ExpiresAt != null && tr.ExpiresAt <= now)
+            .ToListAsync(ct);
+
+        if (expiredSubjectRoles.Count == 0 && expiredTeamRoles.Count == 0)
+            return 0;
+
+        foreach (var assignment in expiredSubjectRoles)
+        {
+            _db.SubjectRoles.Remove(assignment);
+            _events.RoleExpired(new RoleExpired(
+                AssignmentId: assignment.Id,
+                SubjectId: assignment.SubjectId,
+                SubjectExternalId: assignment.Subject.ExternalId,
+                RoleId: assignment.RoleId,
+                RoleCode: assignment.Role.Code,
+                ResourceInstanceId: assignment.ResourceInstanceId,
+                ExpiredAt: assignment.ExpiresAt!.Value,
+                OccurredAt: now));
+        }
+
+        foreach (var assignment in expiredTeamRoles)
+        {
+            _db.TeamRoles.Remove(assignment);
+            _events.TeamRoleExpired(new TeamRoleExpired(
+                AssignmentId: assignment.Id,
+                TeamId: assignment.TeamId,
+                TeamCode: assignment.Team.Code,
+                RoleId: assignment.RoleId,
+                RoleCode: assignment.Role.Code,
+                ResourceInstanceId: assignment.ResourceInstanceId,
+                ExpiredAt: assignment.ExpiresAt!.Value,
+                OccurredAt: now));
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        var total = expiredSubjectRoles.Count + expiredTeamRoles.Count;
+        _logger.LogInformation(
+            "Swept {SubjectCount} expired subject role(s) and {TeamCount} expired team role(s)",
+            expiredSubjectRoles.Count, expiredTeamRoles.Count);
+
+        return total;
+    }
 }

@@ -24,6 +24,21 @@ public interface IRbacEventPublisher
     void RoleAssigned(RoleAssigned payload, MessageHeaders? headers = null);
     void RoleRevoked(RoleRevoked payload, MessageHeaders? headers = null);
 
+    // Team grants reach every current and future member, so they carry their
+    // own subject rather than masquerading as a subject_role event.
+    void TeamRoleAssigned(TeamRoleAssigned payload, MessageHeaders? headers = null);
+    void TeamRoleRevoked(TeamRoleRevoked payload, MessageHeaders? headers = null);
+
+    // Emitted by the server-side expiry sweep. Separate from the revoked
+    // events so consumers can distinguish an administrative action from a
+    // time-boxed grant lapsing.
+    void RoleExpired(RoleExpired payload, MessageHeaders? headers = null);
+    void TeamRoleExpired(TeamRoleExpired payload, MessageHeaders? headers = null);
+
+    // Subject-level cache invalidation — deactivation denies at check time
+    // immediately, but cached consumers lag without a push.
+    void SubjectDeactivated(SubjectDeactivated payload, MessageHeaders? headers = null);
+
     void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null);
     void PolicyUpdated(PolicyUpdated payload, MessageHeaders? headers = null);
     void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null);

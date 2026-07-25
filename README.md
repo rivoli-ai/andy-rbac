@@ -48,6 +48,44 @@ dotnet run
 
 API runs at: **https://localhost:5003**
 
+### Database bootstrap
+
+Schema creation and seeding are separate switches, and both default to on in
+Development and off elsewhere:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Database:MigrateOnStartup` | `true` in Development | Apply EF migrations (PostgreSQL) or `EnsureCreated` + drift heal (SQLite) at startup. |
+| `Database:SeedOnStartup` | follows `MigrateOnStartup` | Seed actions, applications, global roles, stock policies and manifest data. |
+
+Outside Development, apply migrations out of band so concurrent instances don't
+race — as an init container, a release job, or:
+
+```bash
+dotnet run --project src/Andy.Rbac.Api -- --migrate   # migrate + seed, then exit
+```
+
+Seeding requires the schema to exist but not to have been created by the same
+process, so an init container can migrate while the app seeds on startup.
+
+### Administrator authority
+
+RBAC administration is granted by holding a global `super-admin` or `rbac-admin`
+role **in the RBAC store** — not by a token claim. An `admin` claim is unscoped,
+so honouring it means any application's admin can administer RBAC globally.
+
+Because the first administrator has to grant themselves a role before any
+store-backed grant exists, the claim remains available as a bootstrap:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Authorization:AdministratorRoles` | `["super-admin", "rbac-admin"]` | Store roles conferring RBAC administration. |
+| `Authorization:AllowClaimBootstrap` | `true` | Honour an `admin`/`super-admin` **claim**. Every use logs a warning. |
+| `Authorization:BootstrapClaimRoles` | `["super-admin", "admin"]` | Claim values the bootstrap accepts. |
+
+Once real administrators hold a store-backed role, set
+`Authorization:AllowClaimBootstrap=false`.
+
 ## Project Structure
 
 ```
@@ -153,6 +191,37 @@ andy-rbac check permission user-123 andy-tasks:goal:read
 ```
 
 Global flags: `--api-url` / `-u` (env `ANDY_RBAC_URL`), `--api-key` / `-k` (env `ANDY_RBAC_API_KEY`), `--output` / `-o`.
+
+### Authenticating the CLI
+
+The CLI sends its key as an `X-API-Key` header. Keys are minted against an
+existing subject and act as that subject:
+
+```bash
+# Mint a key (administrator only). The plaintext key is returned ONCE.
+curl -X POST https://localhost:5003/api/apikeys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"subjectExternalId":"admin-user","name":"laptop CLI"}'
+
+# => { "keyPrefix": "rbac_live_...", "key": "rbac_live_....<secret>", ... }
+
+export ANDY_RBAC_API_KEY='rbac_live_....<secret>'
+andy-rbac role list --application andy-tasks
+```
+
+Only a SHA-256 hash of the secret is stored, so a lost key cannot be recovered —
+mint a replacement and revoke the old one:
+
+```bash
+curl -X POST https://localhost:5003/api/apikeys/{id}/revoke -H "Authorization: Bearer $TOKEN"
+```
+
+A key presents its owner's roles, read from the RBAC store at authentication
+time. Passing `scopes` at creation narrows that set — the intersection of the
+declared scopes and the roles the owner actually holds — so a key can never
+carry more authority than its subject. Keys stop working immediately when
+revoked, when `expiresAt` passes, or when their owning subject is deactivated.
 
 ## MCP Tools
 

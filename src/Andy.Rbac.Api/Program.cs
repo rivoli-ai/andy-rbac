@@ -10,6 +10,7 @@ using Andy.Rbac.Infrastructure.Repositories;
 using Andy.Rbac.Messaging;
 using Andy.Telemetry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore.Authentication;
 using OpenTelemetry.Trace;
@@ -58,6 +59,9 @@ builder.Services.AddScoped<IPermissionRepository, PermissionRepository>();
 
 // Add services
 builder.Services.AddScoped<IPermissionEvaluator, PermissionEvaluator>();
+// Gate for caller-asserted external groups (issue #45 follow-up): only the
+// subject itself or an active service principal may supply them.
+builder.Services.AddScoped<ICallerGroupsResolver, CallerGroupsResolver>();
 builder.Services.AddScoped<IApplicationService, ApplicationService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
@@ -123,7 +127,23 @@ var andyAuthAuthority = builder.Configuration["AndyAuth:Authority"]
     ?? throw new InvalidOperationException("AndyAuth:Authority is required (set via ANDY_AUTH_AUTHORITY env var).");
 
 // Add authentication (integrate with andy-auth)
-builder.Services.AddAuthentication("Bearer")
+//
+// Two credential types reach this service: andy-auth bearer tokens (users and
+// M2M clients) and API keys (the andy-rbac CLI and automation). The default
+// scheme is a policy scheme that dispatches on the presence of the X-API-Key
+// header, so every endpoint accepts either without each one opting in. The
+// challenge scheme stays MCP (configured below) so OAuth clients still get a
+// correct 401 + resource metadata pointer.
+builder.Services.AddAuthentication(RbacAuthenticationSchemes.Default)
+    .AddPolicyScheme(RbacAuthenticationSchemes.Default, "Bearer token or API key", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+            context.Request.Headers.ContainsKey(ApiKeyAuthenticationHandler.HeaderName)
+                ? ApiKeyAuthenticationHandler.SchemeName
+                : "Bearer";
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.SchemeName, _ => { })
     .AddJwtBearer("Bearer", options =>
     {
         // Match the fallback chain used by `andyAuthAuthority` above
@@ -196,12 +216,20 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.AuthenticationOpt
     options.DefaultChallengeScheme = McpAuthenticationDefaults.AuthenticationScheme;
 });
 
+// Administrator authority comes from andy-rbac's own role store (#114). The
+// token-claim check survives only as a configurable bootstrap — see
+// AdministratorAuthorityOptions.AllowClaimBootstrap.
+builder.Services.Configure<AdministratorAuthorityOptions>(
+    builder.Configuration.GetSection(AdministratorAuthorityOptions.SectionName));
+builder.Services.AddScoped<IAdministratorAuthority, AdministratorAuthority>();
+builder.Services.AddScoped<IAuthorizationHandler, AdministratorAuthorizationHandler>();
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(RbacAuthorizationPolicies.Administrator, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.RequireAssertion(context => RbacAuthorizationPolicies.IsAdministrator(context.User));
+        policy.AddRequirements(new AdministratorRequirement());
     });
 });
 
@@ -363,12 +391,38 @@ app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }))
 // scraper; OTLP push is independent.
 app.MapAndyTelemetry();
 
-// Apply migrations and seed data
+// Schema bootstrap and seeding.
+//
+// Issue #113: schema creation used to be gated on IsDevelopment while seeding
+// ran unconditionally, so any other environment wrote to a schema nothing in
+// the process had created — a startup failure against a fresh database and
+// silent drift against an existing one. There was no non-dev bootstrap path at
+// all, and docker-compose pins ASPNETCORE_ENVIRONMENT=Development, so the gap
+// went unnoticed.
+//
+// The two now move together, and both are configurable:
+//   Database:MigrateOnStartup — defaults to true in Development, false
+//     elsewhere. Production applies migrations out of band (init container,
+//     release job, or `--migrate` below) so concurrent instances do not race.
+//   Database:SeedOnStartup — defaults to follow the migration setting.
+//     Seeding requires the schema to already exist, but not necessarily to
+//     have been created by *this* process: an init-container deployment
+//     migrates out of band and then seeds on startup, which is why these are
+//     independent switches rather than one.
+//
+// `dotnet run -- --migrate` runs schema + seed and exits, for use as the
+// out-of-band deployment step.
+var migrateOnly = args.Contains("--migrate", StringComparer.OrdinalIgnoreCase);
+var migrateOnStartup = builder.Configuration.GetValue<bool?>("Database:MigrateOnStartup")
+    ?? app.Environment.IsDevelopment();
+var seedOnStartup = builder.Configuration.GetValue<bool?>("Database:SeedOnStartup")
+    ?? migrateOnStartup;
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<RbacDbContext>();
 
-    if (app.Environment.IsDevelopment())
+    if (migrateOnStartup || migrateOnly)
     {
         // Schema bootstrap differs by provider:
         //   - PostgreSQL: apply EF migrations (committed under Data/Migrations/).
@@ -392,33 +446,44 @@ using (var scope = app.Services.CreateScope())
         {
             await db.Database.MigrateAsync();
         }
+
+        app.Logger.LogInformation("Database schema is up to date ({Provider}).", dbProvider);
     }
 
-    // Seed initial data
-    await DataSeeder.SeedAsync(db);
-
-    // Manifest-driven app + roles + resource types (reads config/registration.json
-    // files from sibling services via REGISTRATIONS__MANIFEST_PATHS env var or
-    // Registrations:ManifestPaths config). Must run AFTER SeedAsync so the global
-    // roles and actions exist for FK references.
-    await DataSeeder.SeedFromManifestsAsync(db, app.Configuration, app.Logger);
-
-    // Seed application-specific data for the consumer apps and out-of-scope
-    // services that don't yet ship a registration manifest. The 10 in-scope
-    // Andy services (auth/rbac/docs/code-index/containers/issues/agents/tasks/
-    // policies/models) are handled by SeedFromManifestsAsync above.
-    foreach (var appCode in new[] { "andy-cli", "andy-agentic-web", "narration", "subscription" })
+    if (seedOnStartup || migrateOnly)
     {
-        await DataSeeder.SeedApplicationDataAsync(db, appCode);
+        // Seed initial data
+        await DataSeeder.SeedAsync(db);
+
+        // Manifest-driven app + roles + resource types (reads config/registration.json
+        // files from sibling services via REGISTRATIONS__MANIFEST_PATHS env var or
+        // Registrations:ManifestPaths config). Must run AFTER SeedAsync so the global
+        // roles and actions exist for FK references.
+        await DataSeeder.SeedFromManifestsAsync(db, app.Configuration, app.Logger);
+
+        // Seed application-specific data for the consumer apps and out-of-scope
+        // services that don't yet ship a registration manifest. The 10 in-scope
+        // Andy services (auth/rbac/docs/code-index/containers/issues/agents/tasks/
+        // policies/models) are handled by SeedFromManifestsAsync above.
+        foreach (var appCode in new[] { "andy-cli", "andy-agentic-web", "narration", "subscription" })
+        {
+            await DataSeeder.SeedApplicationDataAsync(db, appCode);
+        }
+
+        // Seed super-admin permissions for all resource types
+        await DataSeeder.SeedSuperAdminPermissionsAsync(db);
+
+        // Real users get their Subject row created lazily on first authenticated
+        // request — see Andy.Rbac.Api.Middleware.EnsureSubjectMiddleware. The
+        // well-known dev test subject (test@andy.local) is upserted by
+        // SeedFromManifestsAsync above when binding the manifest's testUserRole.
     }
+}
 
-    // Seed super-admin permissions for all resource types
-    await DataSeeder.SeedSuperAdminPermissionsAsync(db);
-
-    // Real users get their Subject row created lazily on first authenticated
-    // request — see Andy.Rbac.Api.Middleware.EnsureSubjectMiddleware. The
-    // well-known dev test subject (test@andy.local) is upserted by
-    // SeedFromManifestsAsync above when binding the manifest's testUserRole.
+if (migrateOnly)
+{
+    app.Logger.LogInformation("--migrate complete; exiting without serving.");
+    return;
 }
 
 app.Run();
