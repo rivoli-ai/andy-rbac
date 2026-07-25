@@ -29,6 +29,12 @@ public interface IRbacEventPublisher
     void TeamRoleAssigned(TeamRoleAssigned payload, MessageHeaders? headers = null);
     void TeamRoleRevoked(TeamRoleRevoked payload, MessageHeaders? headers = null);
 
+    // Emitted by the server-side expiry sweep. Separate from the revoked
+    // events so consumers can distinguish an administrative action from a
+    // time-boxed grant lapsing.
+    void RoleExpired(RoleExpired payload, MessageHeaders? headers = null);
+    void TeamRoleExpired(TeamRoleExpired payload, MessageHeaders? headers = null);
+
     void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null);
     void PolicyUpdated(PolicyUpdated payload, MessageHeaders? headers = null);
     void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null);

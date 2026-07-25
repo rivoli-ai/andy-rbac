@@ -105,7 +105,19 @@ public class DynamicClientRegistrationController : ControllerBase
     }
 
     /// <summary>
-    /// Get registered client information (proxies to Andy.Auth)
+    /// Get registered client information (proxies to Andy.Auth).
+    ///
+    /// RFC 7592 protects the client configuration endpoint with the
+    /// registration access token issued at registration time. This proxy
+    /// forwards the caller's Authorization header so andy-auth can enforce
+    /// that; previously it sent nothing, presenting an unauthenticated read
+    /// path for client metadata whose safety depended entirely on how
+    /// andy-auth happened to guard the endpoint.
+    ///
+    /// Upstream status codes are propagated rather than collapsed: every
+    /// non-2xx used to become 404 "Client not found", so a 401 from a missing
+    /// token and a 500 from a failing authorization server both looked like a
+    /// client that does not exist.
     /// </summary>
     [HttpGet("{clientId}")]
     public async Task<IActionResult> GetClient(string clientId)
@@ -115,17 +127,28 @@ public class DynamicClientRegistrationController : ControllerBase
             var httpClient = _httpClientFactory.CreateClient();
             var andyAuthUrl = $"{AndyAuthAuthority}/connect/register/{clientId}";
 
-            var response = await httpClient.GetAsync(andyAuthUrl);
+            using var request = new HttpRequestMessage(HttpMethod.Get, andyAuthUrl);
+            if (Request.Headers.TryGetValue("Authorization", out var authorization))
+                request.Headers.TryAddWithoutValidation("Authorization", authorization.ToArray());
+
+            var response = await httpClient.SendAsync(request);
 
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<ClientInfoResponse>();
                 return Ok(result);
             }
-            else
-            {
-                return NotFound(new { error = "not_found", error_description = "Client not found" });
-            }
+
+            var body = await response.Content.ReadAsStringAsync();
+            _logger.LogWarning(
+                "Andy.Auth client lookup returned {StatusCode} for {ClientId}",
+                response.StatusCode, clientId);
+            return StatusCode((int)response.StatusCode, body);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to connect to Andy.Auth for client lookup");
+            return StatusCode(503, new { error = "server_error", error_description = "Authorization server unavailable" });
         }
         catch (Exception ex)
         {

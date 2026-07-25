@@ -68,6 +68,9 @@ public sealed class GrantExpiryWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<IGrantService>();
                 var swept = await service.SweepExpiredGrantsAsync(stoppingToken);
+                // Time-boxed role assignments expire the same way instance
+                // grants do and need the same push (#121).
+                swept += await service.SweepExpiredRoleAssignmentsAsync(stoppingToken);
                 if (swept > 0)
                 {
                     _logger.LogInformation(

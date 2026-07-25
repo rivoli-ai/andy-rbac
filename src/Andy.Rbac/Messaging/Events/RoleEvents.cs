@@ -87,3 +87,36 @@ public sealed record TeamRoleRevoked(
     string? ResourceInstanceId,
     DateTimeOffset OccurredAt
 );
+
+// Expiry of a time-boxed role assignment, emitted by the server-side sweep.
+// Subject scheme:
+//   andy.rbac.events.subject_role.{assignment_id}.expired
+//   andy.rbac.events.team_role.{assignment_id}.expired
+//
+// Distinct from the revoked events for the same reason GrantExpired is distinct
+// from GrantRevoked: "an admin took this away" and "your temporary grant
+// lapsed" are different facts, and a consumer surfacing either to a user or an
+// audit log needs to tell them apart.
+
+public sealed record RoleExpired(
+    Guid AssignmentId,
+    Guid SubjectId,
+    string SubjectExternalId,
+    Guid RoleId,
+    string RoleCode,
+    string? ResourceInstanceId,
+    // The ExpiresAt timestamp that was crossed.
+    DateTimeOffset ExpiredAt,
+    DateTimeOffset OccurredAt
+);
+
+public sealed record TeamRoleExpired(
+    Guid AssignmentId,
+    Guid TeamId,
+    string TeamCode,
+    Guid RoleId,
+    string RoleCode,
+    string? ResourceInstanceId,
+    DateTimeOffset ExpiredAt,
+    DateTimeOffset OccurredAt
+);
