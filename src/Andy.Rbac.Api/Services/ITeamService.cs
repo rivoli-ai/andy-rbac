@@ -18,10 +18,10 @@ public interface ITeamService
     /// Without it these operations could only report the ambiguity, never
     /// resolve it, so such a subject could not be added to a team at all.
     /// </remarks>
-    Task<string> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, string? subjectProvider = null, CancellationToken ct = default);
+    Task<MutationResult> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, string? subjectProvider = null, CancellationToken ct = default);
 
     /// <remarks>See <see cref="AddMemberAsync"/> for <c>subjectProvider</c>.</remarks>
-    Task<string> RemoveMemberAsync(string teamCode, string subjectExternalId, string? subjectProvider = null, CancellationToken ct = default);
+    Task<MutationResult> RemoveMemberAsync(string teamCode, string subjectExternalId, string? subjectProvider = null, CancellationToken ct = default);
 }
 
 public record TeamSummary(

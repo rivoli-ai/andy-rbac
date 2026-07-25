@@ -63,9 +63,9 @@ public class TeamRoleAssignmentParityTests
 
         var result = await CreateService(db).AssignToTeamAsync("parity-team", "parity-role", "test-app");
 
-        result.Should().NotContain("already assigned",
+        result.Message.Should().NotContain("already assigned",
             "an expired grant is dead to the evaluator and must be renewable");
-        result.Should().StartWith("Successfully");
+        result.Message.Should().StartWith("Successfully");
 
         var assignment = await db.TeamRoles.SingleAsync(tr => tr.TeamId == team.Id && tr.RoleId == role.Id);
         assignment.ExpiresAt.Should().BeNull("re-assigning without an expiry clears the old one");
@@ -88,7 +88,7 @@ public class TeamRoleAssignmentParityTests
 
         var result = await CreateService(db).AssignToTeamAsync("parity-team", "parity-role", "test-app");
 
-        result.Should().Contain("already assigned");
+        result.Message.Should().Contain("already assigned");
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class TeamRoleAssignmentParityTests
             "parity-team", "parity-role", resourceInstanceId: "doc-1",
             applicationCode: "test-app", expiresAt: null);
 
-        scoped.Should().StartWith("Successfully",
+        scoped.Message.Should().StartWith("Successfully",
             "the unique index is (TeamId, RoleId, ResourceInstanceId) — these are different grants");
 
         var assignments = await db.TeamRoles

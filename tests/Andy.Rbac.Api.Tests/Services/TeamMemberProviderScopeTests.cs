@@ -51,7 +51,8 @@ public class TeamMemberProviderScopeTests
 
         var result = await CreateService(db).AddMemberAsync("ambig-team", "shared-id");
 
-        result.Should().StartWith("Error:").And.Contain("ambiguous");
+        result.Outcome.Should().Be(MutationOutcome.Ambiguous);
+        result.Message.Should().Contain("ambiguous");
     }
 
     [Fact]
@@ -63,7 +64,7 @@ public class TeamMemberProviderScopeTests
         var result = await CreateService(db).AddMemberAsync(
             "ambig-team", "shared-id", TeamMembershipRole.Member, subjectProvider: "provider-b");
 
-        result.Should().StartWith("Successfully");
+        result.Message.Should().StartWith("Successfully");
 
         var team = await db.Teams.FirstAsync(t => t.Code == "ambig-team");
         var members = await db.TeamMembers.Where(tm => tm.TeamId == team.Id).ToListAsync();
@@ -83,7 +84,7 @@ public class TeamMemberProviderScopeTests
 
         var result = await service.RemoveMemberAsync("ambig-team", "shared-id", subjectProvider: "provider-a");
 
-        result.Should().StartWith("Successfully");
+        result.Message.Should().StartWith("Successfully");
 
         var team = await db.Teams.FirstAsync(t => t.Code == "ambig-team");
         var remaining = await db.TeamMembers.Where(tm => tm.TeamId == team.Id).ToListAsync();
@@ -99,7 +100,8 @@ public class TeamMemberProviderScopeTests
         var result = await CreateService(db).AddMemberAsync(
             "ambig-team", "shared-id", TeamMembershipRole.Member, subjectProvider: "provider-c");
 
-        result.Should().StartWith("Error:").And.Contain("not found");
+        result.Outcome.Should().Be(MutationOutcome.NotFound);
+        result.Message.Should().Contain("not found");
     }
 
     [Fact]
@@ -111,7 +113,7 @@ public class TeamMemberProviderScopeTests
         // viewer-user comes from the standard seed under a single provider.
         var result = await CreateService(db).AddMemberAsync("ambig-team", "viewer-user");
 
-        result.Should().StartWith("Successfully",
+        result.Message.Should().StartWith("Successfully",
             "the provider argument is optional, not required");
     }
 }

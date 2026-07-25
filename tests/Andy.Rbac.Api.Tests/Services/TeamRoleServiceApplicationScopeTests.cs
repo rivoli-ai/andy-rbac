@@ -74,7 +74,7 @@ public class TeamRoleServiceApplicationScopeTests
         var result = await service.AssignToTeamAsync("test-team", "admin", applicationCode: "app-b");
 
         // Assert — the assignment must reference app-b's role, not test-app's.
-        result.Should().StartWith("Successfully assigned");
+        result.Message.Should().StartWith("Successfully assigned");
         var assignment = await context.TeamRoles.SingleAsync(tr => tr.TeamId == TestTeamId);
         assignment.RoleId.Should().Be(AppBRoleId, "the caller asked for app-b's admin role");
         assignment.RoleId.Should().NotBe(AppARoleId);
@@ -91,10 +91,10 @@ public class TeamRoleServiceApplicationScopeTests
         var result = await service.AssignToTeamAsync("test-team", "admin");
 
         // Assert — must refuse, listing the candidate applications, and assign nothing.
-        result.Should().StartWith("Error:");
-        result.Should().Contain("ambiguous");
-        result.Should().Contain("test-app");
-        result.Should().Contain("app-b");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("ambiguous");
+        result.Message.Should().Contain("test-app");
+        result.Message.Should().Contain("app-b");
         (await context.TeamRoles.AnyAsync(tr => tr.TeamId == TestTeamId)).Should().BeFalse(
             "an ambiguous request must never silently pick an application's role");
     }
@@ -108,7 +108,7 @@ public class TeamRoleServiceApplicationScopeTests
 
         var result = await service.AssignToTeamAsync("test-team", "editor");
 
-        result.Should().StartWith("Successfully assigned");
+        result.Message.Should().StartWith("Successfully assigned");
     }
 
     [Fact]
@@ -120,8 +120,8 @@ public class TeamRoleServiceApplicationScopeTests
 
         var result = await service.AssignToTeamAsync("test-team", "editor", applicationCode: "app-b");
 
-        result.Should().StartWith("Error:");
-        result.Should().Contain("app-b");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("app-b");
         (await context.TeamRoles.AnyAsync(tr => tr.TeamId == TestTeamId)).Should().BeFalse();
     }
 }

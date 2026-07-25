@@ -208,7 +208,7 @@ public class TeamServiceTests
         var result = await service.AddMemberAsync("test-team", "viewer-user", TeamMembershipRole.Member);
 
         // Assert
-        result.Should().Contain("Successfully added");
+        result.Message.Should().Contain("Successfully added");
     }
 
     [Fact]
@@ -222,7 +222,7 @@ public class TeamServiceTests
         var result = await service.AddMemberAsync("test-team", "editor-user", TeamMembershipRole.Member);
 
         // Assert
-        result.Should().Contain("already a member");
+        result.Message.Should().Contain("already a member");
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public class TeamServiceTests
         var result = await service.AddMemberAsync("non-existent", "admin-user");
 
         // Assert
-        result.Should().StartWith("Error:");
+        result.Succeeded.Should().BeFalse();
     }
 
     [Fact]
@@ -250,7 +250,7 @@ public class TeamServiceTests
         var result = await service.AddMemberAsync("test-team", "non-existent");
 
         // Assert
-        result.Should().StartWith("Error:");
+        result.Succeeded.Should().BeFalse();
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public class TeamServiceTests
         var result = await service.AddMemberAsync("test-team", "admin-user", TeamMembershipRole.Admin);
 
         // Assert
-        result.Should().Contain("Admin");
+        result.Message.Should().Contain("Admin");
 
         // Verify the membership role
         var team = await service.GetByCodeAsync("test-team");
@@ -282,7 +282,7 @@ public class TeamServiceTests
         var result = await service.RemoveMemberAsync("test-team", "editor-user");
 
         // Assert
-        result.Should().Contain("Successfully removed");
+        result.Message.Should().Contain("Successfully removed");
 
         // Verify member was removed
         var team = await service.GetByCodeAsync("test-team");
@@ -300,6 +300,6 @@ public class TeamServiceTests
         var result = await service.RemoveMemberAsync("test-team", "admin-user");
 
         // Assert
-        result.Should().Contain("not a member");
+        result.Message.Should().Contain("not a member");
     }
 }

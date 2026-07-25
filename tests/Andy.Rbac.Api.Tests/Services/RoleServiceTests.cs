@@ -196,7 +196,7 @@ public class RoleServiceTests
         var result = await service.AssignToSubjectAsync("no-role-user", "editor");
 
         // Assert
-        result.Should().Contain("Successfully assigned");
+        result.Message.Should().Contain("Successfully assigned");
     }
 
     [Fact]
@@ -210,7 +210,7 @@ public class RoleServiceTests
         var result = await service.AssignToSubjectAsync("admin-user", "admin");
 
         // Assert
-        result.Should().Contain("already assigned");
+        result.Message.Should().Contain("already assigned");
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public class RoleServiceTests
         var result = await service.AssignToSubjectWithExpiryAsync(
             "viewer-user", "viewer", null, "test-app", renewedUntil);
 
-        result.Should().Contain("Successfully assigned");
+        result.Message.Should().Contain("Successfully assigned");
         context.SubjectRoles.Count(value => value.SubjectId == assignment.SubjectId &&
             value.RoleId == assignment.RoleId).Should().Be(1);
         assignment.ExpiresAt.Should().Be(renewedUntil);
@@ -246,8 +246,8 @@ public class RoleServiceTests
         var result = await service.AssignToSubjectAsync("non-existent-user", "admin");
 
         // Assert
-        result.Should().StartWith("Error:");
-        result.Should().Contain("not found");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("not found");
     }
 
     [Fact]
@@ -261,8 +261,8 @@ public class RoleServiceTests
         var result = await service.AssignToSubjectAsync("admin-user", "non-existent-role");
 
         // Assert
-        result.Should().StartWith("Error:");
-        result.Should().Contain("not found");
+        result.Succeeded.Should().BeFalse();
+        result.Message.Should().Contain("not found");
     }
 
     [Fact]
@@ -276,7 +276,7 @@ public class RoleServiceTests
         var result = await service.RevokeFromSubjectAsync("admin-user", "admin");
 
         // Assert
-        result.Should().Contain("Successfully revoked");
+        result.Message.Should().Contain("Successfully revoked");
     }
 
     [Fact]
@@ -290,7 +290,7 @@ public class RoleServiceTests
         var result = await service.RevokeFromSubjectAsync("viewer-user", "admin");
 
         // Assert
-        result.Should().Contain("not assigned");
+        result.Message.Should().Contain("not assigned");
     }
 
     [Fact]
@@ -304,7 +304,7 @@ public class RoleServiceTests
         var result = await service.AssignToTeamAsync("test-team", "viewer");
 
         // Assert
-        result.Should().Contain("Successfully assigned");
+        result.Message.Should().Contain("Successfully assigned");
     }
 
     [Fact]
@@ -321,6 +321,6 @@ public class RoleServiceTests
         var result = await service.AssignToTeamAsync("test-team", "viewer");
 
         // Assert
-        result.Should().Contain("already assigned");
+        result.Message.Should().Contain("already assigned");
     }
 }

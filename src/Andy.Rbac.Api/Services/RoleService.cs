@@ -250,10 +250,10 @@ public class RoleService : IRoleService
         return true;
     }
 
-    public async Task<string> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default)
+    public async Task<MutationResult> AssignToSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default)
         => await AssignToSubjectWithExpiryAsync(subjectExternalId, roleCode, resourceInstanceId, applicationCode, expiresAt: null, ct);
 
-    public async Task<string> AssignToSubjectWithExpiryAsync(
+    public async Task<MutationResult> AssignToSubjectWithExpiryAsync(
         string subjectExternalId,
         string roleCode,
         string? resourceInstanceId,
@@ -263,7 +263,7 @@ public class RoleService : IRoleService
         => await AssignToSubjectCoreAsync(
             subjectExternalId, subjectProvider: null, roleCode, resourceInstanceId, applicationCode, expiresAt, ct);
 
-    public async Task<string> AssignToSubjectForProviderWithExpiryAsync(
+    public async Task<MutationResult> AssignToSubjectForProviderWithExpiryAsync(
         string subjectExternalId,
         string subjectProvider,
         string roleCode,
@@ -274,7 +274,7 @@ public class RoleService : IRoleService
         => await AssignToSubjectCoreAsync(
             subjectExternalId, subjectProvider, roleCode, resourceInstanceId, applicationCode, expiresAt, ct);
 
-    private async Task<string> AssignToSubjectCoreAsync(
+    private async Task<MutationResult> AssignToSubjectCoreAsync(
         string subjectExternalId,
         string? subjectProvider,
         string roleCode,
@@ -286,21 +286,21 @@ public class RoleService : IRoleService
         var subjectResolution = await SubjectResolver.ResolveAsync(
             _db, subjectExternalId, subjectProvider, tracking: true, ct);
         if (subjectResolution.IsAmbiguous)
-            return $"Error: Subject '{subjectExternalId}' is ambiguous; use the provider-aware subject endpoint";
+            return MutationResult.Ambiguous($"Subject '{subjectExternalId}' is ambiguous; use the provider-aware subject endpoint");
         var subject = subjectResolution.Subject;
         if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
+            return MutationResult.NotFound($"Subject '{subjectExternalId}' not found");
 
         var (role, roleError) = await ResolveRoleAsync(roleCode, applicationCode, ct);
         if (role == null)
-            return roleError!;
+            return roleError;
 
         var existing = await _db.SubjectRoles.FirstOrDefaultAsync(
             sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id &&
                 sr.ResourceInstanceId == resourceInstanceId, ct);
         var now = DateTimeOffset.UtcNow;
         if (existing is not null && (existing.ExpiresAt is null || existing.ExpiresAt > now))
-            return $"Role '{roleCode}' is already assigned to user";
+            return MutationResult.Ok($"Role '{roleCode}' is already assigned to user");
 
         var assignment = existing ?? new SubjectRole
         {
@@ -326,41 +326,41 @@ public class RoleService : IRoleService
 
         _logger.LogInformation("Assigned role {RoleCode} to {SubjectId}", roleCode, subjectExternalId);
 
-        return $"Successfully assigned role '{roleCode}' to user '{subjectExternalId}'";
+        return MutationResult.Ok($"Successfully assigned role '{roleCode}' to user '{subjectExternalId}'");
     }
 
-    public async Task<string> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default)
+    public async Task<MutationResult> RevokeFromSubjectAsync(string subjectExternalId, string roleCode, string? resourceInstanceId = null, string? applicationCode = null, CancellationToken ct = default)
         => await RevokeFromSubjectCoreAsync(
             subjectExternalId, subjectProvider: null, roleCode, resourceInstanceId, applicationCode, ct);
 
-    public async Task<string> RevokeFromSubjectForProviderAsync(
+    public async Task<MutationResult> RevokeFromSubjectForProviderAsync(
         string subjectExternalId, string subjectProvider, string roleCode,
         string? resourceInstanceId = null, string? applicationCode = null,
         CancellationToken ct = default)
         => await RevokeFromSubjectCoreAsync(
             subjectExternalId, subjectProvider, roleCode, resourceInstanceId, applicationCode, ct);
 
-    private async Task<string> RevokeFromSubjectCoreAsync(
+    private async Task<MutationResult> RevokeFromSubjectCoreAsync(
         string subjectExternalId, string? subjectProvider, string roleCode,
         string? resourceInstanceId, string? applicationCode, CancellationToken ct)
     {
         var subjectResolution = await SubjectResolver.ResolveAsync(
             _db, subjectExternalId, subjectProvider, tracking: true, ct);
         if (subjectResolution.IsAmbiguous)
-            return $"Error: Subject '{subjectExternalId}' is ambiguous; use the provider-aware subject endpoint";
+            return MutationResult.Ambiguous($"Subject '{subjectExternalId}' is ambiguous; use the provider-aware subject endpoint");
         var subject = subjectResolution.Subject;
         if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
+            return MutationResult.NotFound($"Subject '{subjectExternalId}' not found");
 
         var (role, roleError) = await ResolveRoleAsync(roleCode, applicationCode, ct);
         if (role == null)
-            return roleError!;
+            return roleError;
 
         var assignment = await _db.SubjectRoles
             .FirstOrDefaultAsync(sr => sr.SubjectId == subject.Id && sr.RoleId == role.Id && sr.ResourceInstanceId == resourceInstanceId, ct);
 
         if (assignment == null)
-            return $"Role '{roleCode}' is not assigned to user";
+            return MutationResult.Ok($"Role '{roleCode}' is not assigned to user");
 
         _db.SubjectRoles.Remove(assignment);
         _events.RoleRevoked(new RoleRevoked(
@@ -375,7 +375,7 @@ public class RoleService : IRoleService
 
         _logger.LogInformation("Revoked role {RoleCode} from {SubjectId}", roleCode, subjectExternalId);
 
-        return $"Successfully revoked role '{roleCode}' from user '{subjectExternalId}'";
+        return MutationResult.Ok($"Successfully revoked role '{roleCode}' from user '{subjectExternalId}'");
     }
 
     /// <summary>
@@ -384,14 +384,19 @@ public class RoleService : IRoleService
     /// the candidate applications; we never silently bind an arbitrary
     /// application's role.
     /// </summary>
-    private async Task<(Role? Role, string? Error)> ResolveRoleAsync(
+    private async Task<(Role? Role, MutationResult Error)> ResolveRoleAsync(
         string roleCode, string? applicationCode, CancellationToken ct)
     {
-        var (role, _, error) = await RoleResolver.ResolveAsync(_db, roleCode, applicationCode, ct);
-        return role != null ? (role, null) : (null, $"Error: {error}");
+        var (role, kind, error) = await RoleResolver.ResolveAsync(_db, roleCode, applicationCode, ct);
+        if (role != null)
+            return (role, default);
+
+        return (null, kind == RoleResolutionErrorKind.Ambiguous
+            ? MutationResult.Ambiguous(error!)
+            : MutationResult.NotFound(error!));
     }
 
-    public async Task<string> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default)
+    public async Task<MutationResult> AssignToTeamAsync(string teamCode, string roleCode, string? applicationCode = null, CancellationToken ct = default)
         => await AssignToTeamWithExpiryAsync(teamCode, roleCode, resourceInstanceId: null, applicationCode, expiresAt: null, ct);
 
     /// <summary>
@@ -407,7 +412,7 @@ public class RoleService : IRoleService
     /// <c>RoleAssigned</c> event was published, leaving team grants invisible to
     /// the outbox push pipeline.
     /// </summary>
-    public async Task<string> AssignToTeamWithExpiryAsync(
+    public async Task<MutationResult> AssignToTeamWithExpiryAsync(
         string teamCode,
         string roleCode,
         string? resourceInstanceId,
@@ -417,11 +422,11 @@ public class RoleService : IRoleService
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
-            return $"Error: Team '{teamCode}' not found";
+            return MutationResult.NotFound($"Team '{teamCode}' not found");
 
         var (role, roleError) = await ResolveRoleAsync(roleCode, applicationCode, ct);
         if (role == null)
-            return roleError!;
+            return roleError;
 
         var existing = await _db.TeamRoles.FirstOrDefaultAsync(
             tr => tr.TeamId == team.Id && tr.RoleId == role.Id &&
@@ -429,7 +434,7 @@ public class RoleService : IRoleService
 
         var now = DateTimeOffset.UtcNow;
         if (existing is not null && (existing.ExpiresAt is null || existing.ExpiresAt > now))
-            return $"Role '{roleCode}' is already assigned to team";
+            return MutationResult.Ok($"Role '{roleCode}' is already assigned to team");
 
         var assignment = existing ?? new TeamRole
         {
@@ -457,7 +462,7 @@ public class RoleService : IRoleService
 
         _logger.LogInformation("Assigned role {RoleCode} to team {TeamCode}", roleCode, teamCode);
 
-        return $"Successfully assigned role '{roleCode}' to team '{teamCode}'";
+        return MutationResult.Ok($"Successfully assigned role '{roleCode}' to team '{teamCode}'");
     }
 
     private static RoleDetailResult MapToDetailResult(Role role)

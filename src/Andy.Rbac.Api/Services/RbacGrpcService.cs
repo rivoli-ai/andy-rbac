@@ -161,7 +161,7 @@ public class RbacGrpcService : RbacService.RbacServiceBase
         DateTimeOffset? expiresAt = request.HasExpiresAtUnix
             ? DateTimeOffset.FromUnixTimeSeconds(request.ExpiresAtUnix)
             : null;
-        var message = request.HasSubjectProvider
+        var result = request.HasSubjectProvider
             ? await service.AssignToSubjectForProviderWithExpiryAsync(
                 request.SubjectId, request.SubjectProvider, request.RoleCode,
                 request.HasResourceInstanceId ? request.ResourceInstanceId : null,
@@ -172,7 +172,7 @@ public class RbacGrpcService : RbacService.RbacServiceBase
                 request.HasResourceInstanceId ? request.ResourceInstanceId : null,
                 request.HasApplicationCode ? request.ApplicationCode : null,
                 expiresAt, context.CancellationToken);
-        return new AssignRoleResponse { Success = !message.StartsWith("Error:", StringComparison.Ordinal), Message = message };
+        return new AssignRoleResponse { Success = result.Succeeded, Message = result.Message };
     }
 
     public override async Task<RevokeRoleResponse> RevokeRole(
@@ -180,7 +180,7 @@ public class RbacGrpcService : RbacService.RbacServiceBase
     {
         await EnsureAdministratorAsync(context);
         var service = _roleService ?? throw Unavailable("Role service is unavailable");
-        var message = request.HasSubjectProvider
+        var result = request.HasSubjectProvider
             ? await service.RevokeFromSubjectForProviderAsync(
                 request.SubjectId, request.SubjectProvider, request.RoleCode,
                 request.HasResourceInstanceId ? request.ResourceInstanceId : null,
@@ -191,7 +191,7 @@ public class RbacGrpcService : RbacService.RbacServiceBase
                 request.HasResourceInstanceId ? request.ResourceInstanceId : null,
                 request.HasApplicationCode ? request.ApplicationCode : null,
                 context.CancellationToken);
-        return new RevokeRoleResponse { Success = !message.StartsWith("Error:", StringComparison.Ordinal), Message = message };
+        return new RevokeRoleResponse { Success = result.Succeeded, Message = result.Message };
     }
 
     public override async Task<GrantInstancePermissionResponse> GrantInstancePermission(

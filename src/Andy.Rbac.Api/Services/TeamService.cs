@@ -149,22 +149,22 @@ public class TeamService : ITeamService
         return true;
     }
 
-    public async Task<string> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, string? subjectProvider = null, CancellationToken ct = default)
+    public async Task<MutationResult> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, string? subjectProvider = null, CancellationToken ct = default)
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
-            return $"Error: Team '{teamCode}' not found";
+            return MutationResult.NotFound($"Team '{teamCode}' not found");
 
         var subjectResolution = await SubjectResolver.ResolveAsync(
             _db, subjectExternalId, subjectProvider, tracking: true, ct);
         if (subjectResolution.IsAmbiguous)
-            return $"Error: Subject '{subjectExternalId}' is ambiguous; specify its provider";
+            return MutationResult.Ambiguous($"Subject '{subjectExternalId}' is ambiguous; specify its provider");
         var subject = subjectResolution.Subject;
         if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
+            return MutationResult.NotFound($"Subject '{subjectExternalId}' not found");
 
         if (await _db.TeamMembers.AnyAsync(tm => tm.TeamId == team.Id && tm.SubjectId == subject.Id, ct))
-            return $"User is already a member of team '{teamCode}'";
+            return MutationResult.Ok($"User is already a member of team '{teamCode}'");
 
         _db.TeamMembers.Add(new TeamMember
         {
@@ -177,35 +177,35 @@ public class TeamService : ITeamService
 
         _logger.LogInformation("Added {SubjectId} to team {TeamCode}", subjectExternalId, teamCode);
 
-        return $"Successfully added user '{subjectExternalId}' to team '{teamCode}' as {role}";
+        return MutationResult.Ok($"Successfully added user '{subjectExternalId}' to team '{teamCode}' as {role}");
     }
 
-    public async Task<string> RemoveMemberAsync(string teamCode, string subjectExternalId, string? subjectProvider = null, CancellationToken ct = default)
+    public async Task<MutationResult> RemoveMemberAsync(string teamCode, string subjectExternalId, string? subjectProvider = null, CancellationToken ct = default)
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
-            return $"Error: Team '{teamCode}' not found";
+            return MutationResult.NotFound($"Team '{teamCode}' not found");
 
         var subjectResolution = await SubjectResolver.ResolveAsync(
             _db, subjectExternalId, subjectProvider, tracking: true, ct);
         if (subjectResolution.IsAmbiguous)
-            return $"Error: Subject '{subjectExternalId}' is ambiguous; specify its provider";
+            return MutationResult.Ambiguous($"Subject '{subjectExternalId}' is ambiguous; specify its provider");
         var subject = subjectResolution.Subject;
         if (subject == null)
-            return $"Error: Subject '{subjectExternalId}' not found";
+            return MutationResult.NotFound($"Subject '{subjectExternalId}' not found");
 
         var membership = await _db.TeamMembers
             .FirstOrDefaultAsync(tm => tm.TeamId == team.Id && tm.SubjectId == subject.Id, ct);
 
         if (membership == null)
-            return $"User is not a member of team '{teamCode}'";
+            return MutationResult.Ok($"User is not a member of team '{teamCode}'");
 
         _db.TeamMembers.Remove(membership);
         await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation("Removed {SubjectId} from team {TeamCode}", subjectExternalId, teamCode);
 
-        return $"Successfully removed user '{subjectExternalId}' from team '{teamCode}'";
+        return MutationResult.Ok($"Successfully removed user '{subjectExternalId}' from team '{teamCode}'");
     }
 
     private static TeamDetailResult MapToDetailResult(Team team)
