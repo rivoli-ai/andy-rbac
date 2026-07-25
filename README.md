@@ -86,6 +86,25 @@ store-backed grant exists, the claim remains available as a bootstrap:
 Once real administrators hold a store-backed role, set
 `Authorization:AllowClaimBootstrap=false`.
 
+### Permission-check auditing
+
+Every permission check is audited, but the write happens off the request path:
+checks enqueue to a bounded in-memory buffer that a background service drains in
+batches.
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Audit:Capacity` | `10000` | Buffered records. When full, the **oldest** is dropped — a check never waits on audit capacity. |
+| `Audit:BatchSize` | `200` | Records per database round trip. |
+| `Audit:FlushInterval` | `2s` | How long a partial batch waits before being written. |
+
+The trade-off is explicit: records still buffered when the process dies are
+lost, and a sustained burst past `Audit:Capacity` drops the oldest rather than
+slowing requests down. Drops are counted and logged. An orderly shutdown drains
+the buffer. If you need every check durably recorded, raise `Audit:Capacity` and
+ensure clean shutdowns — `rbac_audit_logs` has no retention policy yet, so plan
+for its growth.
+
 ## Project Structure
 
 ```

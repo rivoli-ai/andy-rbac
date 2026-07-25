@@ -13,17 +13,22 @@ public class PermissionEvaluator : IPermissionEvaluator
     private readonly IPermissionRepository _permissionRepository;
     private readonly ILogger<PermissionEvaluator> _logger;
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    private readonly IRbacAuditSink _auditSink;
 
     public PermissionEvaluator(
         RbacDbContext db,
         IPermissionRepository permissionRepository,
         ILogger<PermissionEvaluator> logger,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null,
+        IRbacAuditSink? auditSink = null)
     {
         _db = db;
         _permissionRepository = permissionRepository;
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
+        // Discarding is the safe default for direct unit construction: an
+        // absent sink must not make a check fail or write inline.
+        _auditSink = auditSink ?? NullRbacAuditSink.Instance;
     }
 
     public async Task<PermissionCheckResult> CheckPermissionAsync(
@@ -87,7 +92,7 @@ public class PermissionEvaluator : IPermissionEvaluator
             1,
             new KeyValuePair<string, object?>("andy.rbac.outcome", outcome),
             new KeyValuePair<string, object?>("andy.rbac.permission", permission));
-        await WriteAuditLogAsync(resolvedSubjectId, permission, resourceInstanceId, result, ct);
+        QueueAuditLog(resolvedSubjectId, permission, resourceInstanceId, result);
         return result;
 
         async Task<PermissionCheckResult> EvaluateAsync()
@@ -152,18 +157,29 @@ public class PermissionEvaluator : IPermissionEvaluator
         }
     }
 
-    private async Task WriteAuditLogAsync(
+    /// <summary>
+    /// Queues the check for the background audit writer.
+    ///
+    /// This used to insert a row and call <c>SaveChangesAsync</c> inline on
+    /// every check, allowed or denied — a write plus its own transaction on the
+    /// hottest path in the service, multiplied by the permission count on
+    /// <c>CheckAnyPermission</c>, and enough to keep the check path off a read
+    /// replica. Records are now handed to a bounded in-memory queue and written
+    /// in batches (#124). The trade: records buffered when the process dies are
+    /// lost, and a sustained burst past the configured capacity drops the
+    /// oldest rather than slowing requests down.
+    /// </summary>
+    private void QueueAuditLog(
         Guid? subjectId,
         string permission,
         string? resourceInstanceId,
-        PermissionCheckResult result,
-        CancellationToken ct)
+        PermissionCheckResult result)
     {
         try
         {
             var permissionParts = permission.Split(':', 3);
             var httpContext = _httpContextAccessor?.HttpContext;
-            _db.AuditLogs.Add(new RbacAuditLog
+            _auditSink.TryWrite(new RbacAuditLog
             {
                 Id = Guid.NewGuid(),
                 SubjectId = subjectId,
@@ -178,12 +194,11 @@ public class PermissionEvaluator : IPermissionEvaluator
                 IpAddress = httpContext?.Connection.RemoteIpAddress?.ToString(),
                 UserAgent = httpContext?.Request.Headers.UserAgent.ToString()
             });
-            await _db.SaveChangesAsync(ct);
         }
         catch (Exception ex)
         {
-            // Audit persistence must never change the authorization decision.
-            _logger.LogError(ex, "Failed to persist RBAC permission-check audit event");
+            // Audit capture must never change the authorization decision.
+            _logger.LogError(ex, "Failed to queue RBAC permission-check audit event");
         }
     }
 
