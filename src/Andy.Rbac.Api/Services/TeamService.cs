@@ -132,6 +132,15 @@ public class TeamService : ITeamService
         if (team == null)
             return false;
 
+        // Team.ParentTeam is configured OnDelete(Restrict), so removing a team
+        // that still has children throws at SaveChanges. Report the conflict
+        // instead of letting a constraint violation escape as a 500.
+        if (await _db.Teams.AnyAsync(t => t.ParentTeamId == id, ct))
+        {
+            throw new ConflictException(
+                $"Team '{team.Code}' has child teams; reparent or delete them first.");
+        }
+
         _db.Teams.Remove(team);
         await _db.SaveChangesAsync(ct);
 
@@ -140,14 +149,14 @@ public class TeamService : ITeamService
         return true;
     }
 
-    public async Task<string> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, CancellationToken ct = default)
+    public async Task<string> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, string? subjectProvider = null, CancellationToken ct = default)
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
             return $"Error: Team '{teamCode}' not found";
 
         var subjectResolution = await SubjectResolver.ResolveAsync(
-            _db, subjectExternalId, provider: null, tracking: true, ct);
+            _db, subjectExternalId, subjectProvider, tracking: true, ct);
         if (subjectResolution.IsAmbiguous)
             return $"Error: Subject '{subjectExternalId}' is ambiguous; specify its provider";
         var subject = subjectResolution.Subject;
@@ -171,14 +180,14 @@ public class TeamService : ITeamService
         return $"Successfully added user '{subjectExternalId}' to team '{teamCode}' as {role}";
     }
 
-    public async Task<string> RemoveMemberAsync(string teamCode, string subjectExternalId, CancellationToken ct = default)
+    public async Task<string> RemoveMemberAsync(string teamCode, string subjectExternalId, string? subjectProvider = null, CancellationToken ct = default)
     {
         var team = await _db.Teams.FirstOrDefaultAsync(t => t.Code == teamCode, ct);
         if (team == null)
             return $"Error: Team '{teamCode}' not found";
 
         var subjectResolution = await SubjectResolver.ResolveAsync(
-            _db, subjectExternalId, provider: null, tracking: true, ct);
+            _db, subjectExternalId, subjectProvider, tracking: true, ct);
         if (subjectResolution.IsAmbiguous)
             return $"Error: Subject '{subjectExternalId}' is ambiguous; specify its provider";
         var subject = subjectResolution.Subject;

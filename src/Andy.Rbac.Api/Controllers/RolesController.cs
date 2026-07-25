@@ -78,12 +78,18 @@ public class RolesController : ControllerBase
     [Authorize(Policy = RbacAuthorizationPolicies.Administrator)]
     [ProducesResponseType(typeof(RoleDetail), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> CreateRole([FromBody] CreateRoleRequest request, CancellationToken ct)
     {
         try
         {
             var result = await _roleService.CreateAsync(request, ct);
             return CreatedAtAction(nameof(GetRole), new { id = result.Role.Id }, result.Role);
+        }
+        catch (ConflictException ex)
+        {
+            // A duplicate code is an ordinary client mistake, not a server fault.
+            return Conflict(ex.Message);
         }
         catch (InvalidOperationException ex)
         {

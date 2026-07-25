@@ -430,7 +430,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _teamServiceMock
-            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully added user-123 to team-1 as Member");
 
         // Act
@@ -446,7 +446,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _teamServiceMock
-            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully added user-123 to team-1 as Admin");
 
         // Act
@@ -454,7 +454,7 @@ public class RbacMcpToolsTests
 
         // Assert
         _teamServiceMock.Verify(
-            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, It.IsAny<CancellationToken>()),
+            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Admin, null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -464,7 +464,7 @@ public class RbacMcpToolsTests
         // Arrange
         var tools = CreateTools();
         _teamServiceMock
-            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, It.IsAny<CancellationToken>()))
+            .Setup(x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Successfully added user-123 to team-1 as Member");
 
         // Act
@@ -472,7 +472,7 @@ public class RbacMcpToolsTests
 
         // Assert
         _teamServiceMock.Verify(
-            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, It.IsAny<CancellationToken>()),
+            x => x.AddMemberAsync("team-1", "user-123", TeamMembershipRole.Member, null, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 

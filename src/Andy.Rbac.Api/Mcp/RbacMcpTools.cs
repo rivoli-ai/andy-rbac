@@ -255,13 +255,14 @@ public class RbacMcpTools
     public async Task<string> AddUserToTeam(
         [Description("Team code")] string teamCode,
         [Description("External ID of the user")] string subjectExternalId,
-        [Description("Membership role: Member, Admin, or Owner")] string membershipRole = "Member")
+        [Description("Membership role: Member, Admin, or Owner")] string membershipRole = "Member",
+        [Description("Identity provider, required when the external ID is ambiguous")] string? subjectProvider = null)
     {
         EnsureAdministrator();
         if (!Enum.TryParse<TeamMembershipRole>(membershipRole, true, out var role))
             role = TeamMembershipRole.Member;
 
-        var message = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role);
+        var message = await _teamService.AddMemberAsync(teamCode, subjectExternalId, role, subjectProvider);
         _logger.LogInformation("MCP: {Message}", message);
         return message;
     }

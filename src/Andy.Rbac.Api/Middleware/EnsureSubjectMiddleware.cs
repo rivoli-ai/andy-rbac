@@ -45,7 +45,7 @@ public class EnsureSubjectMiddleware
                     var name = context.User.FindFirst("name")?.Value
                         ?? context.User.FindFirst("preferred_username")?.Value
                         ?? email;
-                    db.Subjects.Add(new Subject
+                    var provisioned = new Subject
                     {
                         ExternalId = sub,
                         Provider = provider,
@@ -54,9 +54,33 @@ public class EnsureSubjectMiddleware
                         DisplayName = name,
                         IsActive = true,
                         LastSeenAt = DateTimeOffset.UtcNow,
-                    });
-                    await db.SaveChangesAsync();
-                    logger.LogInformation("Auto-provisioned Subject for {Email} ({Sub}).", email, sub);
+                    };
+                    db.Subjects.Add(provisioned);
+
+                    try
+                    {
+                        await db.SaveChangesAsync();
+                        logger.LogInformation("Auto-provisioned Subject for {Email} ({Sub}).", email, sub);
+                    }
+                    catch (DbUpdateException)
+                    {
+                        // This runs on every authenticated request, so two
+                        // concurrent first requests for one user — a browser
+                        // opening several panels at once, or any parallel client
+                        // — both read null and both insert, and the loser hit
+                        // the (Provider, ExternalId) unique index. That surfaced
+                        // as an intermittent 500 on a user's very first
+                        // interaction. The row now exists either way, so adopt
+                        // the winner's and carry on.
+                        db.Entry(provisioned).State = EntityState.Detached;
+                        var winner = await db.Subjects.FirstOrDefaultAsync(
+                            s => s.Provider == provider && s.ExternalId == sub);
+                        if (winner is null)
+                            throw; // a genuine failure, not the provisioning race
+
+                        logger.LogDebug(
+                            "Lost the provisioning race for {Sub}; using the concurrently created Subject.", sub);
+                    }
                 }
                 else if (existing.LastSeenAt is null
                     || DateTimeOffset.UtcNow - existing.LastSeenAt.Value > LastSeenRefreshInterval)

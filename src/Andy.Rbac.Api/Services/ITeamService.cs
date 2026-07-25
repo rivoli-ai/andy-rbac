@@ -12,8 +12,16 @@ public interface ITeamService
     Task<TeamDetailResult?> GetByCodeAsync(string code, CancellationToken ct = default);
     Task<TeamDetailResult> CreateAsync(CreateTeamRequest request, CancellationToken ct = default);
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
-    Task<string> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, CancellationToken ct = default);
-    Task<string> RemoveMemberAsync(string teamCode, string subjectExternalId, CancellationToken ct = default);
+    /// <remarks>
+    /// <c>subjectProvider</c> disambiguates an external ID that exists under
+    /// more than one provider — the database key is (Provider, ExternalId).
+    /// Without it these operations could only report the ambiguity, never
+    /// resolve it, so such a subject could not be added to a team at all.
+    /// </remarks>
+    Task<string> AddMemberAsync(string teamCode, string subjectExternalId, TeamMembershipRole role = TeamMembershipRole.Member, string? subjectProvider = null, CancellationToken ct = default);
+
+    /// <remarks>See <see cref="AddMemberAsync"/> for <c>subjectProvider</c>.</remarks>
+    Task<string> RemoveMemberAsync(string teamCode, string subjectExternalId, string? subjectProvider = null, CancellationToken ct = default);
 }
 
 public record TeamSummary(

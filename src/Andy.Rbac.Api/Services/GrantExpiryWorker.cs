@@ -35,6 +35,20 @@ public sealed class GrantExpiryWorker : BackgroundService
         _scopeFactory = scopeFactory;
         _logger = logger;
         _sweepInterval = options.Value.SweepInterval;
+
+        // The documented minimum was never enforced. A misconfigured
+        // GrantExpiry:SweepInterval of 00:00:00 turned this into a tight loop
+        // issuing a four-Include InstancePermissions query per iteration, and a
+        // negative value threw from inside ExecuteAsync where it surfaced as a
+        // silently dead worker. OutboxDispatcher validates its equivalents in
+        // the constructor; match that, so the failure is a loud startup crash.
+        if (_sweepInterval < GrantExpiryWorkerOptions.MinimumSweepInterval)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                _sweepInterval,
+                $"GrantExpiry:SweepInterval must be at least {GrantExpiryWorkerOptions.MinimumSweepInterval}.");
+        }
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -86,8 +100,14 @@ public sealed class GrantExpiryWorkerOptions
     public const string SectionName = "GrantExpiry";
 
     /// <summary>
+    /// Lower bound on <see cref="SweepInterval"/>, enforced by the worker's
+    /// constructor.
+    /// </summary>
+    public static readonly TimeSpan MinimumSweepInterval = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// How often the worker sweeps for expired grants.
-    /// Default: 60 seconds. Must be ≥ 5 seconds.
+    /// Default: 60 seconds. Must be ≥ <see cref="MinimumSweepInterval"/>.
     /// </summary>
     public TimeSpan SweepInterval { get; set; } = TimeSpan.FromSeconds(60);
 }

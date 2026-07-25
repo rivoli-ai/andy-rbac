@@ -138,6 +138,16 @@ public class RoleService : IRoleService
             await EnsureParentChainIsAcyclicAsync(parent.Id, ct);
         }
 
+        // Role codes are unique within their application scope. Check first so
+        // the ordinary duplicate is a 409 rather than a unique-index violation
+        // surfacing as a 500, and catch the violation below for the race the
+        // check cannot close.
+        if (await _db.Roles.AnyAsync(r => r.Code == request.Code && r.ApplicationId == applicationId, ct))
+        {
+            throw new ConflictException(
+                $"Role '{request.Code}' already exists in application scope '{request.ApplicationCode ?? "(global)"}'");
+        }
+
         var role = new Role
         {
             Code = request.Code,
@@ -157,7 +167,17 @@ public class RoleService : IRoleService
             ParentRoleCode: request.ParentRoleCode,
             IsSystem: role.IsSystem,
             OccurredAt: DateTimeOffset.UtcNow));
-        await _db.SaveChangesAsync(ct);
+
+        try
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // Lost the race against a concurrent create of the same code.
+            throw new ConflictException(
+                $"Role '{request.Code}' already exists in application scope '{request.ApplicationCode ?? "(global)"}'", ex);
+        }
 
         _logger.LogInformation("Created role {RoleCode}", role.Code);
 
