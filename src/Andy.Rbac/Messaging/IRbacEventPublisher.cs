@@ -35,6 +35,10 @@ public interface IRbacEventPublisher
     void RoleExpired(RoleExpired payload, MessageHeaders? headers = null);
     void TeamRoleExpired(TeamRoleExpired payload, MessageHeaders? headers = null);
 
+    // Subject-level cache invalidation — deactivation denies at check time
+    // immediately, but cached consumers lag without a push.
+    void SubjectDeactivated(SubjectDeactivated payload, MessageHeaders? headers = null);
+
     void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null);
     void PolicyUpdated(PolicyUpdated payload, MessageHeaders? headers = null);
     void PolicyDeleted(PolicyDeleted payload, MessageHeaders? headers = null);

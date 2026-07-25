@@ -50,6 +50,9 @@ public sealed class RbacEventPublisher : IRbacEventPublisher
     public void TeamRoleExpired(TeamRoleExpired payload, MessageHeaders? headers = null)
         => Stage($"{SubjectPrefix}.team_role.{payload.AssignmentId}.expired", payload, headers);
 
+    public void SubjectDeactivated(SubjectDeactivated payload, MessageHeaders? headers = null)
+        => Stage($"{SubjectPrefix}.subject.{payload.SubjectId}.deactivated", payload, headers);
+
     public void PolicyCreated(PolicyCreated payload, MessageHeaders? headers = null)
         => Stage($"{SubjectPrefix}.policy.{payload.PolicyId}.created", payload, headers);
 

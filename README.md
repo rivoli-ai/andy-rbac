@@ -48,6 +48,44 @@ dotnet run
 
 API runs at: **https://localhost:5003**
 
+### Database bootstrap
+
+Schema creation and seeding are separate switches, and both default to on in
+Development and off elsewhere:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Database:MigrateOnStartup` | `true` in Development | Apply EF migrations (PostgreSQL) or `EnsureCreated` + drift heal (SQLite) at startup. |
+| `Database:SeedOnStartup` | follows `MigrateOnStartup` | Seed actions, applications, global roles, stock policies and manifest data. |
+
+Outside Development, apply migrations out of band so concurrent instances don't
+race — as an init container, a release job, or:
+
+```bash
+dotnet run --project src/Andy.Rbac.Api -- --migrate   # migrate + seed, then exit
+```
+
+Seeding requires the schema to exist but not to have been created by the same
+process, so an init container can migrate while the app seeds on startup.
+
+### Administrator authority
+
+RBAC administration is granted by holding a global `super-admin` or `rbac-admin`
+role **in the RBAC store** — not by a token claim. An `admin` claim is unscoped,
+so honouring it means any application's admin can administer RBAC globally.
+
+Because the first administrator has to grant themselves a role before any
+store-backed grant exists, the claim remains available as a bootstrap:
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `Authorization:AdministratorRoles` | `["super-admin", "rbac-admin"]` | Store roles conferring RBAC administration. |
+| `Authorization:AllowClaimBootstrap` | `true` | Honour an `admin`/`super-admin` **claim**. Every use logs a warning. |
+| `Authorization:BootstrapClaimRoles` | `["super-admin", "admin"]` | Claim values the bootstrap accepts. |
+
+Once real administrators hold a store-backed role, set
+`Authorization:AllowClaimBootstrap=false`.
+
 ## Project Structure
 
 ```

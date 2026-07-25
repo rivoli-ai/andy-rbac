@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Andy.Rbac.Api.Authorization;
 using Andy.Rbac.Api.Mcp;
 using Andy.Rbac.Api.Services;
 using Andy.Rbac.Models;
@@ -35,7 +36,25 @@ public class RbacMcpToolsTests
         return new HttpContextAccessor { HttpContext = context };
     }
 
-    private RbacMcpTools CreateTools(IHttpContextAccessor? accessor = null)
+    /// <summary>
+    /// Stands in for the store-backed <see cref="IAdministratorAuthority"/>,
+    /// deciding from the principal's role claims. Mirrors the real bootstrap
+    /// path closely enough to exercise the guard without a database.
+    /// </summary>
+    private static IAdministratorAuthority AuthorityFromClaims()
+    {
+        var mock = new Mock<IAdministratorAuthority>();
+        mock.Setup(x => x.IsAdministratorAsync(It.IsAny<ClaimsPrincipal>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ClaimsPrincipal user, CancellationToken _) =>
+                user.FindAll(ClaimTypes.Role).Any(c =>
+                    c.Value is "super-admin" or "admin"));
+        return mock.Object;
+    }
+
+    private RbacMcpTools CreateTools(
+        IHttpContextAccessor? accessor = null,
+        IAdministratorAuthority? authority = null,
+        bool omitAuthority = false)
     {
         return new RbacMcpTools(
             _evaluatorMock.Object,
@@ -45,7 +64,8 @@ public class RbacMcpToolsTests
             _subjectServiceMock.Object,
             _policyServiceMock.Object,
             _loggerMock.Object,
-            accessor ?? AccessorFor("super-admin"));
+            accessor ?? AccessorFor("super-admin"),
+            omitAuthority ? null : authority ?? AuthorityFromClaims());
     }
 
     // ==================== Administrator guard ====================
@@ -68,6 +88,17 @@ public class RbacMcpToolsTests
         var tools = CreateTools(AccessorFor("viewer"));
 
         var act = async () => await tools.AssignRoleToUser("user-123", "admin");
+
+        await act.Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
+    [Fact]
+    public async Task MutatingTool_WithNoAdministratorAuthority_IsDenied()
+    {
+        // Fails closed on a missing dependency, not open (#112, #114).
+        var tools = CreateTools(AccessorFor("super-admin"), omitAuthority: true);
+
+        var act = async () => await tools.CreateApplication("new-app", "New App", null);
 
         await act.Should().ThrowAsync<UnauthorizedAccessException>();
     }

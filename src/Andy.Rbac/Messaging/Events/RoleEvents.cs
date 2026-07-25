@@ -120,3 +120,21 @@ public sealed record TeamRoleExpired(
     DateTimeOffset ExpiredAt,
     DateTimeOffset OccurredAt
 );
+
+// Subject-level invalidation. Subject scheme:
+//   andy.rbac.events.subject.{subject_id}.deactivated
+//
+// Deactivation denies at check time immediately, but a consumer holding
+// cached permissions kept authorising the subject until its own TTL lapsed.
+// One event carries the whole fact regardless of how many grants the subject
+// holds; consumers treat it as a cache flush for that subject rather than
+// reconciling grant by grant.
+
+public sealed record SubjectDeactivated(
+    Guid SubjectId,
+    string SubjectExternalId,
+    string Provider,
+    // ExternalId of whoever performed the deactivation. Null if automated.
+    string? DeactivatedByPrincipal,
+    DateTimeOffset OccurredAt
+);

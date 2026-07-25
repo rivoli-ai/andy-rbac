@@ -20,6 +20,14 @@ public class RbacWebApplicationFactory : WebApplicationFactory<Program>
         // Program.cs requires these config values (no hardcoded fallbacks).
         // Use loopback placeholders — tests don't actually call andy-auth.
         builder.UseSetting("Mcp:ServerUrl", "https://localhost:0");
+
+        // The schema is created below via EnsureCreated on the in-memory
+        // provider, so migration-on-startup stays off; seeding is opted into
+        // explicitly. Both used to be implied by the environment — seeding ran
+        // unconditionally — which left this suite silently depending on
+        // production startup behaviour (#113).
+        builder.UseSetting("Database:MigrateOnStartup", "false");
+        builder.UseSetting("Database:SeedOnStartup", "true");
         builder.UseSetting("AndyAuth:Authority", "https://localhost:0");
         builder.UseSetting("Auth:Authority", "https://localhost:0");
         builder.UseSetting("Auth:Audience", "urn:andy-rbac-api");
