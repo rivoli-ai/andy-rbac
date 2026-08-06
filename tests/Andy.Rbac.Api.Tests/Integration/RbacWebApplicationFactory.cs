@@ -34,11 +34,29 @@ public class RbacWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            // Remove the existing DbContext registration
-            var descriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<RbacDbContext>));
-            if (descriptor != null)
+            // Remove the existing DbContext registration.
+            //
+            // Removing DbContextOptions<RbacDbContext> alone is not enough on
+            // EF Core 9+: AddDbContext also registers
+            // IDbContextOptionsConfiguration<RbacDbContext>, which still carries
+            // the Npgsql configuration. Leaving it behind means both Npgsql and
+            // InMemory end up registered, and EF 10 throws instead of tolerating
+            // it: "Only a single database provider can be registered in a service
+            // provider."
+            //
+            // So drop every descriptor keyed on this context, whatever its shape.
+            var descriptors = services
+                .Where(d =>
+                    (d.ServiceType.IsGenericType &&
+                     d.ServiceType.GetGenericArguments().Contains(typeof(RbacDbContext))) ||
+                    d.ServiceType == typeof(DbContextOptions) ||
+                    d.ServiceType == typeof(RbacDbContext))
+                .ToList();
+
+            foreach (var descriptor in descriptors)
+            {
                 services.Remove(descriptor);
+            }
 
             // Add in-memory database
             services.AddDbContext<RbacDbContext>(options =>
