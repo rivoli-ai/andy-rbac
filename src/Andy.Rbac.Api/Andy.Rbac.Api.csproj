@@ -32,4 +32,12 @@
     <Protobuf Include="..\..\proto\rbac.proto" GrpcServices="Server" Link="Protos\rbac.proto" />
   </ItemGroup>
 
+
+  <!-- see Directory.Packages.props: transitive vulnerability pins -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Api" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
+  </ItemGroup>
+
 </Project>
